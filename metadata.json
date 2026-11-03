@@ -1,0 +1,8 @@
+{
+  "name": "MicrobiomeXpress",
+  "description": "Automated microbiome ASV pipeline wrapping FastQC, Cutadapt, DADA2, and SILVA with interactive QC, taxonomy, and diversity analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
