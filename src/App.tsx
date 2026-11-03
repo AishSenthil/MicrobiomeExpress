@@ -22,7 +22,8 @@ import {
   Cloud,
   HardDrive,
   Zap,
-  History
+  History,
+  GitBranch
 } from 'lucide-react';
 
 import { 
@@ -42,6 +43,8 @@ import {
 
 import { Header } from './components/Header';
 import { PipelineStepper } from './components/PipelineStepper';
+import { ResourceMonitor } from './components/ResourceMonitor';
+import { AnalyticsWidget } from './components/AnalyticsWidget';
 import { QcViewer } from './components/QcViewer';
 import { TaxaBarPlot } from './components/TaxaBarPlot';
 import { DiversityViewer } from './components/DiversityViewer';
@@ -51,6 +54,7 @@ import { UploadModal } from './components/UploadModal';
 import { ReportGeneratorModal } from './components/ReportGeneratorModal';
 import { CodeHubModal } from './components/CodeHubModal';
 import { BatchHistoryTab } from './components/BatchHistoryTab';
+import { PhylogeneticTree } from './components/PhylogeneticTree';
 
 // Initial pipeline stages setup
 const INITIAL_STAGES: PipelineStage[] = [
@@ -62,14 +66,9 @@ const INITIAL_STAGES: PipelineStage[] = [
     status: 'completed',
     duration: '18s',
     summary: 'Analyzed 516,370 raw paired reads. Detected Illumina adapter read-through at 3-prime end.',
-    logs: [
-      'INFO: Started FastQC v0.12.1 on 12 raw FASTQ input streams (8 threads).',
-      'INFO: Processing paired-end FASTQ reads (Phred+33 quality encoding).',
-      'INFO: Basic Statistics: 516,370 total read pairs, sequence length: 250 bp.',
-      'WARN: Per-base sequence quality drops below Q20 past position 220 bp.',
-      'WARN: Adapter Content: Illumina Universal Adapter detected in 7.8% of reads at 3-prime end.',
-      'INFO: Completed raw FastQC evaluation in 18.4s. Generated HTML reports & zip archives.',
-    ],
+    logs: ['INFO: Started FastQC v0.12.1.'],
+    cpuUsage: 85,
+    memoryUsage: 4096,
   },
   {
     id: 'trimming',
@@ -78,15 +77,10 @@ const INITIAL_STAGES: PipelineStage[] = [
     version: 'v4.4',
     status: 'completed',
     duration: '26s',
-    summary: 'Trimmed 515F/806R primers, removed adapter tails, filtered reads <180 bp.',
-    logs: [
-      'INFO: Executing Cutadapt v4.4 with parameters: -g ^GTGCCAGCMGCCGCGGTAA -G ^GGACTACHVGGGTWTCTAAT -q 25,25 -m 180.',
-      'INFO: Read 1 primer: 515F (19 bp) trimmed from 5-prime start.',
-      'INFO: Read 2 primer: 806R (20 bp) trimmed from reverse start.',
-      'INFO: Pairs processed: 516,370 | Pairs passing quality & length filters: 476,820 (92.3%).',
-      'INFO: Adapter read-through successfully excised. Max read error rate: 0.10.',
-      'INFO: Outputting synchronized paired FASTQ streams to ./results/trimmed/ in 26.1s.',
-    ],
+    summary: 'Trimmed 515F/806R primers.',
+    logs: ['INFO: Executing Cutadapt v4.4.'],
+    cpuUsage: 92,
+    memoryUsage: 8192,
   },
   {
     id: 'denoising',
@@ -95,16 +89,10 @@ const INITIAL_STAGES: PipelineStage[] = [
     version: 'v1.28.0',
     status: 'completed',
     duration: '1m 14s',
-    summary: 'Learned error rates, resolved exact amplicon sequence variants, merged read pairs.',
-    logs: [
-      'INFO: Initializing DADA2 (R v4.3.1 / bioconductor-dada2 v1.28.0).',
-      'INFO: Filtering with filterAndTrim(truncLen=c(240, 190), maxEE=c(2,2), truncQ=2).',
-      'INFO: Dereplicating unique sequence reads: derepFastq.',
-      'INFO: Learning empirical error transitions: learnErrors (104,857,600 total bases).',
-      'INFO: Applying Divisive Amplicon Denoising Algorithm (dada): inferred 340 true biological ASVs.',
-      'INFO: Merging paired reads with mergePairs: minOverlap=12, maxMismatch=0.',
-      'INFO: Constructing ASV count matrix: seqtab dimension 6 samples x 340 variants.',
-    ],
+    summary: 'Learned error rates, resolved ASVs.',
+    logs: ['INFO: Initializing DADA2.'],
+    cpuUsage: 98,
+    memoryUsage: 16384,
   },
   {
     id: 'chimera',
@@ -113,14 +101,10 @@ const INITIAL_STAGES: PipelineStage[] = [
     version: 'v1.28.0',
     status: 'completed',
     duration: '12s',
-    summary: 'Identified and filtered bimeric PCR artifacts using consensus parent alignment.',
-    logs: [
-      'INFO: Calling removeBimeraDenovo(seqtab, method="consensus", multithread=8).',
-      'INFO: Evaluating two-parent recombinant sequences.',
-      'INFO: Identified 28 chimeric ASVs (accounting for 4.2% of total denoised reads).',
-      'INFO: Retained 312 non-chimeric biological ASVs (95.8% read abundance preserved).',
-      'INFO: Generated clean non-chimeric sequence table: seqtab.nochim.',
-    ],
+    summary: 'Identified and filtered bimeric PCR artifacts.',
+    logs: ['INFO: Calling removeBimeraDenovo.'],
+    cpuUsage: 75,
+    memoryUsage: 2048,
   },
   {
     id: 'otu_clustering',
@@ -129,15 +113,10 @@ const INITIAL_STAGES: PipelineStage[] = [
     version: 'v2.22.1',
     status: 'completed',
     duration: '14s',
-    summary: 'Clustered 312 exact ASVs into 184 OTU centroids at 97% sequence identity threshold.',
-    logs: [
-      'INFO: Running VSEARCH v2.22.1 --cluster_fast ./results/dada2/dna-sequences.fasta --id 0.97.',
-      'INFO: Greedy centroid clustering based on abundance ranking.',
-      'INFO: Generated 184 centroid sequences in ./results/otu/otu_centroids.fasta.',
-      'INFO: Generated UCLUST cluster map: clusters.uc.',
-      'INFO: Collapsed ASV count matrix into OTU table: otu_table.tsv and otu_matrix.biom.',
-      'INFO: Successfully generated 97% OTU outputs alongside exact ASVs.',
-    ],
+    summary: 'Clustered ASVs into OTU centroids.',
+    logs: ['INFO: Running VSEARCH.'],
+    cpuUsage: 60,
+    memoryUsage: 4096,
   },
   {
     id: 'taxonomy',
@@ -146,16 +125,10 @@ const INITIAL_STAGES: PipelineStage[] = [
     version: 'NR99',
     status: 'completed',
     duration: '45s',
-    summary: 'Classified ASVs against SILVA 138.1 reference database at 80% bootstrap threshold.',
-    logs: [
-      'INFO: Assigning taxonomy with assignTaxonomy(seqtab.nochim, refFasta="silva_nr99_v138.1_wSpecies.fa.gz", minBoot=80).',
-      'INFO: RDP Naive Bayesian Classifier executing on 8 CPU threads.',
-      'INFO: Kingdom: 100% classified as Bacteria.',
-      'INFO: Phylum: 99.4% classified (dominant: Bacillota, Bacteroidota, Pseudomonadota).',
-      'INFO: Genus: 91.2% classified to genus rank.',
-      'INFO: Species assignment complete for 142 ASVs via exact matching: addSpecies.',
-      'INFO: Exported taxonomy.tsv and formatted BIOM matrix.',
-    ],
+    summary: 'Classified ASVs against SILVA 138.1.',
+    logs: ['INFO: Assigning taxonomy.'],
+    cpuUsage: 88,
+    memoryUsage: 12288,
   },
   {
     id: 'diversity',
@@ -164,15 +137,10 @@ const INITIAL_STAGES: PipelineStage[] = [
     version: 'v0.5.8',
     status: 'completed',
     duration: '8s',
-    summary: 'Calculated alpha diversity (Shannon, Simpson, Chao1) and Bray-Curtis PCoA coordinates.',
-    logs: [
-      'INFO: Computing Alpha diversity indices: Shannon entropy, Simpson 1-D, Chao1 bias-corrected richness.',
-      'INFO: Calculating Bray-Curtis pairwise dissimilarity matrix.',
-      'INFO: Principal Coordinate Analysis (PCoA) computed via eigendecomposition of Gower-centered distance matrix.',
-      'INFO: PC1 explains 48.2% of variance, PC2 explains 24.6% of variance.',
-      'INFO: Statistical testing: PERMANOVA pseudo-F = 4.82, p = 0.002 between condition cohorts.',
-      'INFO: All downstream analytical visualizers and tables compiled successfully.',
-    ],
+    summary: 'Calculated alpha diversity and Bray-Curtis PCoA.',
+    logs: ['INFO: Computing Alpha diversity.'],
+    cpuUsage: 40,
+    memoryUsage: 2048,
   },
 ];
 
@@ -182,7 +150,7 @@ export default function App() {
   const [stages, setStages] = useState<PipelineStage[]>(INITIAL_STAGES);
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [activeStageId, setActiveStageId] = useState<string>('otu_clustering');
-  const [activeTab, setActiveTab] = useState<'overview' | 'qc' | 'taxa' | 'diversity' | 'asv_table' | 'history'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'qc' | 'taxa' | 'diversity' | 'asv_table' | 'history' | 'phylogeny'>('overview');
   const [featureMode, setFeatureMode] = useState<'ASV' | 'OTU'>('ASV');
 
   // Modals
@@ -680,6 +648,17 @@ workflow_manager: "${pipelineConfig.workflowManager}"
               <History className="w-4 h-4" />
               <span>Batch History</span>
             </button>
+            <button
+              onClick={() => setActiveTab('phylogeny')}
+              className={`px-3.5 py-2 rounded-xl flex items-center gap-2 transition-all ${
+                activeTab === 'phylogeny'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <GitBranch className="w-4 h-4" />
+              <span>Phylogeny</span>
+            </button>
           </div>
         </div>
 
@@ -790,20 +769,75 @@ workflow_manager: "${pipelineConfig.workflowManager}"
               </div>
             </div>
 
-            {/* Quick split view: Taxa Bar + PCoA */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <TaxaBarPlot
-                asvs={featureMode === 'OTU' ? currentDataset.otus as any : currentDataset.asvs}
-                samples={currentDataset.samples}
-              />
-              <DiversityViewer
-                diversity={featureMode === 'OTU' ? currentDataset.otuDiversity : currentDataset.diversity}
-                samples={currentDataset.samples}
-              />
-            </div>
+            {/* Executive Summary & System Overview */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2 space-y-6">
+                {/* Pipeline Run Status Summary Card */}
+                <div className="bg-white rounded-2xl p-6 border border-slate-200/90 shadow-2xs space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                        <Workflow className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900">Pipeline Execution Summary</h3>
+                        <p className="text-xs text-slate-500">Active run: <span className="font-mono text-slate-700">{currentDataset.runId}</span></p>
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold border border-emerald-200 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      Completed Successfully
+                    </span>
+                  </div>
 
-            {/* Quality Summary preview */}
-            <QcViewer qc={currentDataset.qc} samples={currentDataset.samples} />
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="text-slate-500 font-medium">Pipeline Orchestrator</div>
+                      <div className="font-bold text-slate-900 mt-0.5">{pipelineConfig.workflowManager} ({pipelineConfig.executionMode})</div>
+                    </div>
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="text-slate-500 font-medium">Taxonomy Database</div>
+                      <div className="font-bold text-slate-900 mt-0.5">{pipelineConfig.taxonomyDb}</div>
+                    </div>
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="text-slate-500 font-medium">Denoising Algorithm</div>
+                      <div className="font-bold text-slate-900 mt-0.5">{pipelineConfig.denoisingTool} v1.28</div>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
+                    <span>Use the navigation tabs above to explore detailed FastQC reports, Taxa Bar Plots, Alpha/Beta Diversity, and ASV/OTU matrices.</span>
+                    <button
+                      onClick={() => setActiveTab('taxa')}
+                      className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-all shadow-xs flex items-center gap-1.5"
+                    >
+                      <span>Explore Detailed Analysis</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                <ResourceMonitor stages={stages} />
+              </div>
+
+              <div className="space-y-6">
+                <AnalyticsWidget />
+
+                <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white rounded-2xl p-6 shadow-xl space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-200">MicrobiomeXpress Tips</h4>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    Switch between <strong>ASVs (100%)</strong> and <strong>OTUs (97%)</strong> resolution anytime using the header toggle to compare exact variant precision against clustered operational taxonomic units.
+                  </p>
+                  <div className="pt-2 border-t border-indigo-900/50 flex items-center justify-between text-[11px] text-slate-400 font-mono">
+                    <span>Active Storage</span>
+                    <span className="text-emerald-400">{pipelineConfig.cloudBucketUri}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -845,6 +879,8 @@ workflow_manager: "${pipelineConfig.workflowManager}"
 
         {/* Tab 6: Batch History */}
         {activeTab === 'history' && <BatchHistoryTab />}
+        {/* Tab 7: Phylogeny */}
+        {activeTab === 'phylogeny' && <PhylogeneticTree asvs={currentDataset.asvs} />}
       </main>
 
       {/* Modals */}

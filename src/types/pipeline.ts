@@ -90,6 +90,8 @@ export interface PipelineStage {
   duration?: string;
   summary?: string;
   logs: string[];
+  cpuUsage?: number;
+  memoryUsage?: number;
 }
 
 export interface PerBaseQuality {

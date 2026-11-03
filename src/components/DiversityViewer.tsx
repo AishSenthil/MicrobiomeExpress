@@ -199,7 +199,7 @@ export const DiversityViewer: React.FC<DiversityViewerProps> = ({ diversity, sam
                 </span>
               </div>
 
-              <div className="h-64 flex items-end justify-around border-b border-l border-slate-200 px-6 pb-2 pt-6">
+              <div className="h-64 flex items-end justify-center gap-6 border-b border-l border-slate-200 px-6 pb-2 pt-6">
                 {alphaStatsByGroup.map((stat) => {
                   const color = groupColors.get(stat.group) || '#0284c7';
                   

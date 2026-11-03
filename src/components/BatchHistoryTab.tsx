@@ -17,15 +17,35 @@ export const BatchHistoryTab: React.FC = () => {
           <History className="w-6 h-6 text-blue-600" />
           <h2 className="text-xl font-bold text-slate-900">Batch Run History</h2>
         </div>
-        <div className="relative">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search by Job ID or date..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-xs w-64 focus:ring-1 focus:ring-blue-500"
-          />
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => {
+              const headers = ['Run ID', 'Date', 'Status', 'Samples', 'Config'];
+              const rows = mockBatchHistory.map(r => [r.runId, r.timestamp, r.status, r.totalSamples, r.configSummary]);
+              const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+              const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = 'batch_history.csv';
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            <FileDown className="w-3.5 h-3.5" />
+            Export CSV
+          </button>
+          <div className="relative">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search by Job ID or date..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-xs w-64 focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
         </div>
       </div>
 
@@ -62,13 +82,23 @@ export const BatchHistoryTab: React.FC = () => {
                 <td className="py-3 px-4 text-slate-600 text-xs">{run.configSummary}</td>
                 <td className="py-3 px-4 flex justify-center gap-2">
                   <button 
-                    onClick={() => window.location.href = run.outputFiles.asvTableUrl}
+                    onClick={() => {
+                      const a = document.createElement('a');
+                      a.href = run.outputFiles.asvTableUrl;
+                      a.download = `asv_table_${run.runId}.tsv`;
+                      a.click();
+                    }}
                     className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
                   >
                     <FileDown className="w-4 h-4" />
                   </button>
                   <button 
-                    onClick={() => window.location.href = run.outputFiles.reportUrl}
+                    onClick={() => {
+                      const a = document.createElement('a');
+                      a.href = run.outputFiles.reportUrl;
+                      a.download = `report_${run.runId}.pdf`;
+                      a.click();
+                    }}
                     className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
                   >
                     <FileText className="w-4 h-4" />

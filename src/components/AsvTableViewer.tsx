@@ -45,6 +45,7 @@ export const AsvTableViewer: React.FC<AsvTableViewerProps> = ({
   const [selectedPhylum, setSelectedPhylum] = useState<string>('all');
   const [minAbundance, setMinAbundance] = useState<number>(0);
   const [inspectingItem, setInspectingItem] = useState<ASVRecord | OTURecord | null>(null);
+  const [sortConfig, setSortConfig] = useState<{key: string, direction: 'asc' | 'desc'} | null>(null);
   const [copiedSeq, setCopiedSeq] = useState(false);
 
   const isOtu = activeMode === 'OTU';
@@ -55,7 +56,7 @@ export const AsvTableViewer: React.FC<AsvTableViewerProps> = ({
     return Array.from(new Set(currentList.map(a => a.phylum))).filter(Boolean);
   }, [currentList]);
 
-  // Filtered and sorted records
+  // Filtered records
   const filteredList = useMemo(() => {
     return currentList.filter(item => {
       const id = isOtu ? (item as OTURecord).otuId : (item as ASVRecord).asvId;
@@ -75,6 +76,36 @@ export const AsvTableViewer: React.FC<AsvTableViewerProps> = ({
       return matchSearch && matchPhylum && matchAbundance;
     });
   }, [currentList, isOtu, searchTerm, selectedPhylum, minAbundance]);
+
+  // Sorted records
+  const sortedList = useMemo(() => {
+    const sorted = [...filteredList];
+    if (sortConfig !== null) {
+      sorted.sort((a, b) => {
+        let aVal: any = (a as any)[sortConfig.key];
+        let bVal: any = (b as any)[sortConfig.key];
+        
+        // Handle ID sorting
+        if (sortConfig.key === 'id') {
+          aVal = isOtu ? (a as OTURecord).otuId : (a as ASVRecord).asvId;
+          bVal = isOtu ? (b as OTURecord).otuId : (b as ASVRecord).asvId;
+        }
+
+        if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+    return sorted;
+  }, [filteredList, sortConfig, isOtu]);
+
+  const handleSort = (key: string) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
 
   const handleCopyFasta = (item: ASVRecord | OTURecord) => {
     const id = isOtu ? (item as OTURecord).otuId : (item as ASVRecord).asvId;
@@ -252,20 +283,34 @@ export const AsvTableViewer: React.FC<AsvTableViewerProps> = ({
         <table className="w-full text-xs text-left">
           <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
             <tr>
-              <th className="py-3 px-4">{activeMode} ID</th>
+              <th className="py-3 px-4 cursor-pointer hover:bg-slate-100" onClick={() => handleSort('id')}>
+                {activeMode} ID {sortConfig?.key === 'id' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+              </th>
               {isOtu && <th className="py-3 px-4">Member ASVs</th>}
-              <th className="py-3 px-4">Phylum</th>
+              <th className="py-3 px-4 cursor-pointer hover:bg-slate-100" onClick={() => handleSort('phylum')}>
+                Phylum {sortConfig?.key === 'phylum' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+              </th>
               <th className="py-3 px-4">Genus & Species</th>
-              <th className="py-3 px-4 text-center">Confidence</th>
-              <th className="py-3 px-4 text-right">Length</th>
-              <th className="py-3 px-4 text-right">GC%</th>
-              <th className="py-3 px-4 text-right">Total Reads</th>
-              <th className="py-3 px-4 text-right">Rel. Abundance</th>
+              <th className="py-3 px-4 text-center cursor-pointer hover:bg-slate-100" onClick={() => handleSort('confidence')}>
+                Confidence {sortConfig?.key === 'confidence' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+              </th>
+              <th className="py-3 px-4 text-right cursor-pointer hover:bg-slate-100" onClick={() => handleSort('length')}>
+                Length {sortConfig?.key === 'length' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+              </th>
+              <th className="py-3 px-4 text-right cursor-pointer hover:bg-slate-100" onClick={() => handleSort('gcPercent')}>
+                GC% {sortConfig?.key === 'gcPercent' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+              </th>
+              <th className="py-3 px-4 text-right cursor-pointer hover:bg-slate-100" onClick={() => handleSort('totalReads')}>
+                Total Reads {sortConfig?.key === 'totalReads' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+              </th>
+              <th className="py-3 px-4 text-right cursor-pointer hover:bg-slate-100" onClick={() => handleSort('relativeAbundance')}>
+                Rel. Abundance {sortConfig?.key === 'relativeAbundance' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+              </th>
               <th className="py-3 px-4 text-center">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 font-mono">
-            {filteredList.map((item) => {
+            {sortedList.map((item) => {
               const id = isOtu ? (item as OTURecord).otuId : (item as ASVRecord).asvId;
               const memberAsvs = isOtu ? (item as OTURecord).memberAsvs : [];
 
