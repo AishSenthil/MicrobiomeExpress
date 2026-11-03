@@ -61,10 +61,16 @@ export const BatchHistoryTab: React.FC = () => {
                 <td className="py-3 px-4 text-right font-mono text-slate-700">{run.totalSamples}</td>
                 <td className="py-3 px-4 text-slate-600 text-xs">{run.configSummary}</td>
                 <td className="py-3 px-4 flex justify-center gap-2">
-                  <button className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg">
+                  <button 
+                    onClick={() => window.location.href = run.outputFiles.asvTableUrl}
+                    className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
+                  >
                     <FileDown className="w-4 h-4" />
                   </button>
-                  <button className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg">
+                  <button 
+                    onClick={() => window.location.href = run.outputFiles.reportUrl}
+                    className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
+                  >
                     <FileText className="w-4 h-4" />
                   </button>
                 </td>
