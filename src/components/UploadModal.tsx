@@ -265,16 +265,19 @@ export const UploadModal: React.FC<UploadModalProps> = ({
       setSelectedLayout('paired');
     }
 
-    // 1. Identify "dummy" samples that should be replaced on first real upload
     const isOnlyDummy = sampleList.every(s => 
       /^sample[_-]?0?[12]$/i.test(s.name) || 
+      /^test[_-]?0?[12]$/i.test(s.name) ||
       /^s0[12]$/i.test(s.id) ||
       s.fileR1.toLowerCase().includes('sample_01') ||
-      s.fileR1.toLowerCase().includes('sample_02')
+      s.fileR1.toLowerCase().includes('sample_02') ||
+      s.fileR1.toLowerCase().includes('test01') ||
+      s.fileR1.toLowerCase().includes('test02')
     );
 
-    // 2. Filter existing samples: Keep real ones, drop dummies if we have new data
-    const existingSamples = isOnlyDummy ? [] : [...sampleList];
+    // 2. Determine Behavior: ZIP = Replace everything | Individual Files = Append
+    // Keep real ones if appending, drop dummies if we have new data
+    let existingSamples = (isZipArchive || isOnlyDummy) ? [] : [...sampleList];
     
     // 3. Track existing filenames to prevent exact duplicates
     const existingFiles = new Set(existingSamples.map(s => s.fileR1.toLowerCase()));
@@ -285,7 +288,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
       return isNaN(num) ? max : Math.max(max, num);
     }, 0);
     
-    let idx = maxIdMatch + 1;
+    let idx = (isZipArchive || isOnlyDummy) ? 1 : maxIdMatch + 1;
     const newSampleEntries: SampleMetadata[] = [];
 
     sampleMap.forEach((filesInfo, baseName) => {
@@ -621,13 +624,22 @@ export const UploadModal: React.FC<UploadModalProps> = ({
                   • Layout: {isSingleEnd ? 'Single-End (R1 Only)' : 'Paired-End (R1 + R2)'}
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={handleAddSample}
-                className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1"
-              >
-                <Plus className="w-3.5 h-3.5" /> Add Sample Row
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setSampleList([])}
+                  className="text-xs text-rose-600 hover:text-rose-800 font-semibold flex items-center gap-1 border border-rose-100 px-2 py-1 rounded-lg hover:bg-rose-50 transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Clear All Samples
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAddSample}
+                  className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add Sample Row
+                </button>
+              </div>
             </div>
 
             <div className="border border-slate-200 rounded-xl overflow-hidden">

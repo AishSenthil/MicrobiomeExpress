@@ -1376,16 +1376,9 @@ export function buildPipelineResultsForSamples(
     return x - Math.floor(x);
   };
 
-  // 2. STABLE SUB-SAMPLING based on seed
-  const asvCount = 20 + Math.floor(pseudoRandom(1) * 13); // 20-32
-  const selectedAsvs = [...DYNAMIC_ASV_POOL]
-    .sort((a, b) => pseudoRandom(getSeed(a.asvId)) - pseudoRandom(getSeed(b.asvId)))
-    .slice(0, asvCount);
-
-  const otuCount = 10 + Math.floor(pseudoRandom(2) * 13); // 10-22
-  const selectedOtus = [...DYNAMIC_OTU_POOL]
-    .sort((a, b) => pseudoRandom(getSeed(a.otuId)) - pseudoRandom(getSeed(b.otuId)))
-    .slice(0, otuCount);
+  // 2. STABLE FULL POOL (Always use all 32 ASVs and 22 OTUs for 100% consistent feature counts)
+  const selectedAsvs = DYNAMIC_ASV_POOL;
+  const selectedOtus = DYNAMIC_OTU_POOL;
 
   const totalRawReads = actualSamples.reduce((acc, s) => acc + (s.rawReads || 85000), 0);
   const totalCleanReads = actualSamples.reduce((acc, s) => acc + (s.nonChimericReads || 69000), 0);
