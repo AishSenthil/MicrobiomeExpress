@@ -53,4 +53,21 @@ export const mockBatchHistory: BatchHistoryRecord[] = [
     },
     errorMessage: 'Pipeline failed: FastQC error on sample SOIL_02_R2.fastq.gz (Invalid file format).',
   },
+  {
+    runId: 'RUN-BATCH-2026-0601',
+    timestamp: '2026-06-01 16:45:00',
+    status: 'processing',
+    totalSamples: 8,
+    configSummary: 'DADA2, SILVA138, Celery Batch',
+    outputFiles: {
+      asvTableUrl: '',
+      reportUrl: '',
+      cleanedFastqDir: '',
+    },
+    metrics: {
+      cleanReads: 1420000,
+      asvCount: 510,
+      otuCount: 440,
+    },
+  },
 ];

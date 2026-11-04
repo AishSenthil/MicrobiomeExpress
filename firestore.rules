@@ -1,0 +1,46 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidPipelineRun(data) {
+      return data.keys().hasAll(['runId', 'datasetName', 'status', 'sampleCount', 'totalRawReads', 'totalCleanReads', 'createdAt'])
+        && data.keys().hasOnly(['runId', 'datasetName', 'executionMode', 'status', 'sampleCount', 'totalRawReads', 'totalCleanReads', 'asvCount', 'otuCount', 'duration', 'createdAt'])
+        && data.runId is string && data.runId.size() <= 128
+        && data.datasetName is string && data.datasetName.size() <= 256
+        && data.status is string && data.status in ['completed', 'failed', 'running']
+        && data.sampleCount is number && data.sampleCount >= 0
+        && data.totalRawReads is number && data.totalRawReads >= 0
+        && data.totalCleanReads is number && data.totalCleanReads >= 0
+        && data.createdAt is string && data.createdAt.size() <= 64;
+    }
+
+    function isValidAnalytics(data) {
+      return data.keys().hasAll(['totalRuns', 'totalSamplesProcessed', 'storageUsedGb', 'updatedAt'])
+        && data.keys().hasOnly(['totalRuns', 'totalSamplesProcessed', 'totalRawReads', 'storageUsedGb', 'updatedAt'])
+        && data.totalRuns is number && data.totalRuns >= 0
+        && data.totalSamplesProcessed is number && data.totalSamplesProcessed >= 0
+        && data.storageUsedGb is number && data.storageUsedGb >= 0
+        && data.updatedAt is string && data.updatedAt.size() <= 64;
+    }
+
+    match /pipeline_runs/{runId} {
+      allow read, write: if true;
+    }
+
+    match /pipeline_results/{runId} {
+      allow read, write: if true;
+    }
+
+    match /analytics/{docId} {
+      allow read, write: if true;
+    }
+
+    // Default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

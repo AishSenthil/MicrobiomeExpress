@@ -47,8 +47,8 @@ export const PhylogeneticTree: React.FC<PhylogeneticTreeProps> = ({ asvs }) => {
 
     const g = svg.append('g').attr('transform', 'translate(50, 0)');
 
-    const tree = d3.tree().size([height - 50, width - 200]);
-    const d3Root = d3.hierarchy(root);
+    const tree = d3.tree<any>().size([height - 50, width - 200]);
+    const d3Root = d3.hierarchy<any>(root);
     
     // Sort
     d3Root.sort((a, b) => (a.data.name || '').localeCompare(b.data.name || ''));
@@ -62,9 +62,9 @@ export const PhylogeneticTree: React.FC<PhylogeneticTreeProps> = ({ asvs }) => {
       .attr('fill', 'none')
       .attr('stroke', '#cbd5e1')
       .attr('stroke-width', 1)
-      .attr('d', d3.linkHorizontal()
+      .attr('d', (d3.linkHorizontal()
         .x((d: any) => d.y)
-        .y((d: any) => d.x));
+        .y((d: any) => d.x) as any));
 
     // Nodes
     const node = g.selectAll('.node')

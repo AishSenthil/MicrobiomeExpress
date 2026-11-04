@@ -999,3 +999,533 @@ export const AVAILABLE_DATASETS = [
   { id: 'gut_single', name: 'Human Gut (Single-End 16S, 6 Samples)', data: GUT_SINGLE_END_DATASET },
   { id: 'soil', name: 'Soil Rhizosphere (Paired-End 16S, 6 Samples)', data: SOIL_MICROBIOME_DATASET },
 ];
+
+export const CLEAN_USER_DATASET: PipelineRunResults = {
+  runId: 'WORKSPACE-CUSTOM',
+  datasetName: 'Custom Sequencing Project',
+  timestamp: new Date().toISOString(),
+  config: {
+    ...DEFAULT_PIPELINE_CONFIG,
+    autoRunOnUpload: false,
+  },
+  samples: [],
+  qc: {
+    totalRawReads: 0,
+    totalCleanReads: 0,
+    rawQuality: [],
+    trimmedQuality: [],
+    gcDistribution: [],
+    adapterBefore: [],
+    adapterAfter: [],
+    meanPhredBefore: 0,
+    meanPhredAfter: 0,
+    duplicationRate: 0,
+  },
+  asvs: [],
+  otus: [],
+  diversity: {
+    alpha: [],
+    beta: [],
+    varianceExplained: [0, 0, 0],
+    distanceMetric: 'Bray-Curtis',
+  },
+  otuDiversity: {
+    alpha: [],
+    beta: [],
+    varianceExplained: [0, 0, 0],
+    distanceMetric: 'Bray-Curtis',
+  },
+};
+
+/**
+ * Rich seed pool of 32 Amplicon Sequence Variants across major human & environmental phyla
+ */
+const DYNAMIC_ASV_POOL: Omit<ASVRecord, 'sampleCounts' | 'totalReads' | 'relativeAbundance'>[] = [
+  {
+    asvId: 'ASV_001',
+    sequence: 'TACGTAGGGGGCAAGCGTTATCCGGATTTACTGGGTGTAAAGGGAGCGTAGGCGGTCTTTTAAGTCTGATGTGAAAGCCCACGGCTCAACCGTGGAGGGTCATTGGAAACTGGAAGACTTGAGTGCAGAAGAGGAGAGTGGAACTCCTGGTGTAGCGGTGAAATGCGTAGATATCAGGAGGAACACCGGTGGCGAAGGCGGCTCTCTGGTCTGTAACTGACGCTGAG',
+    length: 253, gcPercent: 51.4, kingdom: 'Bacteria', phylum: 'Bacillota', classTaxa: 'Clostridia', order: 'Oscillospirales', family: 'Ruminococcaceae', genus: 'Faecalibacterium', species: 'Faecalibacterium prausnitzii', confidence: 0.99
+  },
+  {
+    asvId: 'ASV_002',
+    sequence: 'TACGGAGGATCCGAGCGTTATCCGGATTTATTGGGTTTAAAGGGAGCGTAGGCGGACGCTTAAGTCAGTTGTGAAAGTTTGCGGCTCAACCGTAAAATTGCAGTTGAAACTGGGTGCCTTGAGTACATTAGAGGTAGGCGGAATTCGTGGTGTAGCGGTGAAATGCTTAGATATCACGAAGAACTCCGATTGCGAAGGCAGCTTACTGGAGTGTTACTGACGCTGA',
+    length: 253, gcPercent: 47.8, kingdom: 'Bacteria', phylum: 'Bacteroidota', classTaxa: 'Bacteroidia', order: 'Bacteroidales', family: 'Bacteroidaceae', genus: 'Bacteroides', species: 'Bacteroides thetaiotaomicron', confidence: 0.98
+  },
+  {
+    asvId: 'ASV_003',
+    sequence: 'TACGTAGGGTGCGAGCGTTAATCGGAATTACTGGGCGTAAAGCGTGCGCAGGCGGTTTGTTAAGTCAGATGTGAAATCCCCGGGCTCAACCTGGGAACTGCATTTGAAACTGGCAAGCTAGAGTCTTGTAGAGGGGGGTAGAATTCCAGGTGTAGCGGTGAAATGCGTAGAGATCTGGAGGAATACCGGTGGCGAAGGCGGCCCCCTGGACAAAGACTGACGCTCA',
+    length: 253, gcPercent: 54.2, kingdom: 'Bacteria', phylum: 'Pseudomonadota', classTaxa: 'Gammaproteobacteria', order: 'Enterobacterales', family: 'Enterobacteriaceae', genus: 'Escherichia-Shigella', species: 'Escherichia coli', confidence: 0.96
+  },
+  {
+    asvId: 'ASV_004',
+    sequence: 'TACGGAGGATCCGAGCGTTATCCGGATTTATTGGGTTTAAAGGGAGCGTAGGCGGATTGTTAAGTCAGTTGTGAAAGTTTGCGGCTCAACCGTAAAATTGCAGTTGAAACTGACAATCTTGAGTACATTAGAGGTAGGCGGAATTCGTGGTGTAGCGGTGAAATGCTTAGATATCACGAAGAACTCCGATTGCGAAGGCAGCTTACTGGAGTGTTACTGACGCTGA',
+    length: 253, gcPercent: 46.2, kingdom: 'Bacteria', phylum: 'Bacteroidota', classTaxa: 'Bacteroidia', order: 'Bacteroidales', family: 'Bacteroidaceae', genus: 'Bacteroides', species: 'Bacteroides vulgatus', confidence: 0.97
+  },
+  {
+    asvId: 'ASV_005',
+    sequence: 'TACGTAGGGGGCAAGCGTTATCCGGATTTACTGGGTGTAAAGGGAGCGTAGACGGCATGGCAAGTCTGATGTGAAAGCCCACGGCTCAACCGTGGAGGGTCATTGGAAACTGCCAGGCTTGAGTACAGAAGAGGAGAGCGGAACTCCTGGTGTAGCGGTGAAATGCGTAGATATCAGGAGGAACACCGGTGGCGAAGGCGGCTCTCTGGTCTGTAACTGACGCTGA',
+    length: 253, gcPercent: 52.6, kingdom: 'Bacteria', phylum: 'Verrucomicrobiota', classTaxa: 'Verrucomicrobiae', order: 'Verrucomicrobiales', family: 'Akkermansiaceae', genus: 'Akkermansia', species: 'Akkermansia muciniphila', confidence: 0.99
+  },
+  {
+    asvId: 'ASV_006',
+    sequence: 'TACGTAGGGTGCGAGCGTTGTCCGGATTTATTGGGCGTAAAGGGCTCGTAGGCGGTTCGTCGCGTCCGGTGTGAAAGTCCATCGCTTAACGGTGGATCTGCGCCCGGTACGGGCGGGCTGGAGTGCGGTAGGGGAGACTGGAATTCCCGGTGTAACGGTGGAATGTGTAGATATCGGGAAGAACACCAACGGCGAAGGCAGGTCTCTGGGCCGTTACTGACGCTGA',
+    length: 253, gcPercent: 57.7, kingdom: 'Bacteria', phylum: 'Actinomycetota', classTaxa: 'Actinomycetes', order: 'Bifidobacteriales', family: 'Bifidobacteriaceae', genus: 'Bifidobacterium', species: 'Bifidobacterium adolescentis', confidence: 0.98
+  },
+  {
+    asvId: 'ASV_007',
+    sequence: 'TACGTAGGGGGCAAGCGTTATCCGGATTTACTGGGTGTAAAGGGAGCGTAGGCGGTCTTTCAAGTCTGATGTGAAAGCCCCCGGCTCAACCGGGGAGGGTCATTGGAAACTGGGAGACTTGAGTGCAGAAGAGGAGAGTGGAACTCCTGGTGTAGCGGTGAAATGCGTAGATATCAGGAGGAACACCGGTGGCGAAGGCGGCTCTCTGGTCTGTAACTGACGCTGA',
+    length: 253, gcPercent: 52.2, kingdom: 'Bacteria', phylum: 'Bacillota', classTaxa: 'Clostridia', order: 'Lachnospirales', family: 'Lachnospiraceae', genus: 'Roseburia', species: 'Roseburia intestinalis', confidence: 0.95
+  },
+  {
+    asvId: 'ASV_008',
+    sequence: 'TACGGAGGATCCGAGCGTTATCCGGATTTATTGGGTTTAAAGGGAGCGTAGGCGGACGCTTAAGTCAGTTGTGAAAGTTTGCGGCTCAACCGTAAAATTGCAGTTGAAACTGGGTGCCTTGAGTACATTAGAGGTAGGCGGAATTCGTGGTGTAGCGGTGAAATGCTTAGATATCACGAAGAACTCCGATTGCGAAGGCAGCTTACTGGAGTGTTACTGACGCTGA',
+    length: 253, gcPercent: 49.0, kingdom: 'Bacteria', phylum: 'Bacteroidota', classTaxa: 'Bacteroidia', order: 'Bacteroidales', family: 'Prevotellaceae', genus: 'Prevotella', species: 'Prevotella copri', confidence: 0.94
+  },
+  {
+    asvId: 'ASV_009',
+    sequence: 'TACGTAGGGGGCAAGCGTTATCCGGATTTACTGGGTGTAAAGGGAGCGTAGACGGTACTGCAAGTCTGATGTGAAAGCCCACGGCTCAACCGTGGAGGGTCATTGGAAACTGCAGGACTTGAGTACAGAAGAGGAGAGCGGAACTCCTGGTGTAGCGGTGAAATGCGTAGATATCAGGAGGAACACCGGTGGCGAAGGCGGCTCTCTGGTCTGTAACTGACGCTGA',
+    length: 253, gcPercent: 51.8, kingdom: 'Bacteria', phylum: 'Bacillota', classTaxa: 'Clostridia', order: 'Lachnospirales', family: 'Lachnospiraceae', genus: 'Blautia', species: 'Blautia obeum', confidence: 0.95
+  },
+  {
+    asvId: 'ASV_010',
+    sequence: 'TACGGAGGATCCGAGCGTTATCCGGATTTATTGGGTTTAAAGGGAGCGTAGGCGGACGCTTAAGTCAGTTGTGAAAGTTTGCGGCTCAACCGTAAAATTGCAGTTGAAACTGGGTGCCTTGAGTACATTAGAGGTAGGCGGAATTCGTGGTGTAGCGGTGAAATGCTTAGATATCACGAAGAACTCCGATTGCGAAGGCAGCTTACTGGAGTGTTACTGACGCTGA',
+    length: 253, gcPercent: 48.6, kingdom: 'Bacteria', phylum: 'Bacteroidota', classTaxa: 'Bacteroidia', order: 'Bacteroidales', family: 'Tannerellaceae', genus: 'Parabacteroides', species: 'Parabacteroides distasonis', confidence: 0.93
+  },
+  {
+    asvId: 'ASV_011',
+    sequence: 'TACGTAGGTGGCAAGCGTTATCCGGATTTATTGGGCGTAAAGAGCGAGCGCAGGCGGTTGCTTAAGTCTGATGTGAAAGCCCCCGGCTCAACCGGGGAGGGTCATTGGAAACTGGCAAGCTTGAGTGCAGAAGAGGAGAGCGGAACTCCTGGTGTAGCGGTGAAATGCGTAGATATCAGGAGGAACACCGGTGGCGAAGGCGGCTCTCTGGTCTGTAACTGACGCTGA',
+    length: 253, gcPercent: 50.1, kingdom: 'Bacteria', phylum: 'Bacillota', classTaxa: 'Bacilli', order: 'Lactobacillales', family: 'Lactobacillaceae', genus: 'Lactobacillus', species: 'Lactobacillus acidophilus', confidence: 0.97
+  },
+  {
+    asvId: 'ASV_012',
+    sequence: 'TACGTAGGGGGCAAGCGTTATCCGGATTTACTGGGTGTAAAGGGAGCGTAGACGGCATGGCAAGTCTGATGTGAAAGCCCACGGCTCAACCGTGGAGGGTCATTGGAAACTGCCAGGCTTGAGTACAGAAGAGGAGAGCGGAACTCCTGGTGTAGCGGTGAAATGCGTAGATATCAGGAGGAACACCGGTGGCGAAGGCGGCTCTCTGGTCTGTAACTGACGCTGA',
+    length: 253, gcPercent: 49.8, kingdom: 'Bacteria', phylum: 'Bacillota', classTaxa: 'Bacilli', order: 'Lactobacillales', family: 'Streptococcaceae', genus: 'Streptococcus', species: 'Streptococcus thermophilus', confidence: 0.96
+  },
+  {
+    asvId: 'ASV_013',
+    sequence: 'TACGTAGGGGGCAAGCGTTATCCGGATTTACTGGGTGTAAAGGGAGCGTAGGCGGTCTTTTAAGTCTGATGTGAAAGCCCACGGCTCAACCGTGGAGGGTCATTGGAAACTGGAAGACTTGAGTGCAGAAGAGGAGAGTGGAACTCCTGGTGTAGCGGTGAAATGCGTAGATATCAGGAGGAACACCGGTGGCGAAGGCGGCTCTCTGGTCTGTAACTGACGCTGAG',
+    length: 253, gcPercent: 53.4, kingdom: 'Bacteria', phylum: 'Bacillota', classTaxa: 'Clostridia', order: 'Eubacteriales', family: 'Clostridiaceae', genus: 'Clostridium', species: 'Clostridium butyricum', confidence: 0.98
+  },
+  {
+    asvId: 'ASV_014',
+    sequence: 'TACGGAGGATCCGAGCGTTATCCGGATTTATTGGGTTTAAAGGGAGCGTAGGCGGACGCTTAAGTCAGTTGTGAAAGTTTGCGGCTCAACCGTAAAATTGCAGTTGAAACTGGGTGCCTTGAGTACATTAGAGGTAGGCGGAATTCGTGGTGTAGCGGTGAAATGCTTAGATATCACGAAGAACTCCGATTGCGAAGGCAGCTTACTGGAGTGTTACTGACGCTGA',
+    length: 253, gcPercent: 55.0, kingdom: 'Bacteria', phylum: 'Bacillota', classTaxa: 'Negativicutes', order: 'Veillonellales', family: 'Veillonellaceae', genus: 'Veillonella', species: 'Veillonella parvula', confidence: 0.94
+  },
+  {
+    asvId: 'ASV_015',
+    sequence: 'TACGTAGGGGGCAAGCGTTATCCGGATTTACTGGGTGTAAAGGGAGCGTAGACGGCATGGCAAGTCTGATGTGAAAGCCCACGGCTCAACCGTGGAGGGTCATTGGAAACTGCCAGGCTTGAGTACAGAAGAGGAGAGCGGAACTCCTGGTGTAGCGGTGAAATGCGTAGATATCAGGAGGAACACCGGTGGCGAAGGCGGCTCTCTGGTCTGTAACTGACGCTGA',
+    length: 253, gcPercent: 51.0, kingdom: 'Bacteria', phylum: 'Bacillota', classTaxa: 'Clostridia', order: 'Oscillospirales', family: 'Ruminococcaceae', genus: 'Ruminococcus', species: 'Ruminococcus bromii', confidence: 0.97
+  },
+  {
+    asvId: 'ASV_016',
+    sequence: 'TACGTAGGGGGCAAGCGTTATCCGGATTTACTGGGTGTAAAGGGAGCGTAGGCGGTCTTTCAAGTCTGATGTGAAAGCCCCCGGCTCAACCGGGGAGGGTCATTGGAAACTGGGAGACTTGAGTGCAGAAGAGGAGAGTGGAACTCCTGGTGTAGCGGTGAAATGCGTAGATATCAGGAGGAACACCGGTGGCGAAGGCGGCTCTCTGGTCTGTAACTGACGCTGA',
+    length: 253, gcPercent: 48.9, kingdom: 'Bacteria', phylum: 'Bacillota', classTaxa: 'Bacilli', order: 'Lactobacillales', family: 'Enterococcaceae', genus: 'Enterococcus', species: 'Enterococcus faecalis', confidence: 0.99
+  },
+  {
+    asvId: 'ASV_017',
+    sequence: 'TACGGAGGATCCGAGCGTTATCCGGATTTATTGGGTTTAAAGGGAGCGTAGGCGGACGCTTAAGTCAGTTGTGAAAGTTTGCGGCTCAACCGTAAAATTGCAGTTGAAACTGGGTGCCTTGAGTACATTAGAGGTAGGCGGAATTCGTGGTGTAGCGGTGAAATGCTTAGATATCACGAAGAACTCCGATTGCGAAGGCAGCTTACTGGAGTGTTACTGACGCTGA',
+    length: 253, gcPercent: 47.1, kingdom: 'Bacteria', phylum: 'Bacteroidota', classTaxa: 'Bacteroidia', order: 'Bacteroidales', family: 'Rikenellaceae', genus: 'Alistipes', species: 'Alistipes putredinis', confidence: 0.95
+  },
+  {
+    asvId: 'ASV_018',
+    sequence: 'TACGTAGGGGGCAAGCGTTATCCGGATTTACTGGGTGTAAAGGGAGCGTAGACGGTACTGCAAGTCTGATGTGAAAGCCCACGGCTCAACCGTGGAGGGTCATTGGAAACTGCAGGACTTGAGTACAGAAGAGGAGAGCGGAACTCCTGGTGTAGCGGTGAAATGCGTAGATATCAGGAGGAACACCGGTGGCGAAGGCGGCTCTCTGGTCTGTAACTGACGCTGA',
+    length: 253, gcPercent: 52.8, kingdom: 'Bacteria', phylum: 'Bacillota', classTaxa: 'Clostridia', order: 'Lachnospirales', family: 'Lachnospiraceae', genus: 'Coprococcus', species: 'Coprococcus comes', confidence: 0.96
+  },
+  {
+    asvId: 'ASV_019',
+    sequence: 'TACGTAGGGTGCGAGCGTTAATCGGAATTACTGGGCGTAAAGCGTGCGCAGGCGGTTTGTTAAGTCAGATGTGAAATCCCCGGGCTCAACCTGGGAACTGCATTTGAAACTGGCAAGCTAGAGTCTTGTAGAGGGGGGTAGAATTCCAGGTGTAGCGGTGAAATGCGTAGAGATCTGGAGGAATACCGGTGGCGAAGGCGGCCCCCTGGACAAAGACTGACGCTCA',
+    length: 253, gcPercent: 56.1, kingdom: 'Bacteria', phylum: 'Pseudomonadota', classTaxa: 'Betaproteobacteria', order: 'Burkholderiales', family: 'Sutterellaceae', genus: 'Sutterella', species: 'Sutterella wadsworthensis', confidence: 0.93
+  },
+  {
+    asvId: 'ASV_020',
+    sequence: 'TACGGAGGATCCGAGCGTTATCCGGATTTATTGGGTTTAAAGGGAGCGTAGGCGGACGCTTAAGTCAGTTGTGAAAGTTTGCGGCTCAACCGTAAAATTGCAGTTGAAACTGGGTGCCTTGAGTACATTAGAGGTAGGCGGAATTCGTGGTGTAGCGGTGAAATGCTTAGATATCACGAAGAACTCCGATTGCGAAGGCAGCTTACTGGAGTGTTACTGACGCTGA',
+    length: 253, gcPercent: 54.8, kingdom: 'Bacteria', phylum: 'Bacillota', classTaxa: 'Negativicutes', order: 'Veillonellales', family: 'Dialisteraceae', genus: 'Dialister', species: 'Dialister pneumosintes', confidence: 0.92
+  },
+  {
+    asvId: 'ASV_021',
+    sequence: 'TACGTAGGGGGCAAGCGTTATCCGGATTTACTGGGTGTAAAGGGAGCGTAGGCGGTCTTTTAAGTCTGATGTGAAAGCCCACGGCTCAACCGTGGAGGGTCATTGGAAACTGGAAGACTTGAGTGCAGAAGAGGAGAGTGGAACTCCTGGTGTAGCGGTGAAATGCGTAGATATCAGGAGGAACACCGGTGGCGAAGGCGGCTCTCTGGTCTGTAACTGACGCTGAG',
+    length: 253, gcPercent: 51.9, kingdom: 'Bacteria', phylum: 'Bacillota', classTaxa: 'Clostridia', order: 'Eubacteriales', family: 'Eubacteriaceae', genus: 'Eubacterium', species: 'Eubacterium rectale', confidence: 0.98
+  },
+  {
+    asvId: 'ASV_022',
+    sequence: 'TACGGAGGATCCGAGCGTTATCCGGATTTATTGGGTTTAAAGGGAGCGTAGGCGGACGCTTAAGTCAGTTGTGAAAGTTTGCGGCTCAACCGTAAAATTGCAGTTGAAACTGGGTGCCTTGAGTACATTAGAGGTAGGCGGAATTCGTGGTGTAGCGGTGAAATGCTTAGATATCACGAAGAACTCCGATTGCGAAGGCAGCTTACTGGAGTGTTACTGACGCTGA',
+    length: 253, gcPercent: 53.2, kingdom: 'Bacteria', phylum: 'Bacillota', classTaxa: 'Negativicutes', order: 'Acidaminococcales', family: 'Acidaminococcaceae', genus: 'Phascolarctobacterium', species: 'Phascolarctobacterium faecium', confidence: 0.95
+  },
+  {
+    asvId: 'ASV_023',
+    sequence: 'TACGGAGGATCCGAGCGTTATCCGGATTTATTGGGTTTAAAGGGAGCGTAGGCGGATTGTTAAGTCAGTTGTGAAAGTTTGCGGCTCAACCGTAAAATTGCAGTTGAAACTGACAATCTTGAGTACATTAGAGGTAGGCGGAATTCGTGGTGTAGCGGTGAAATGCTTAGATATCACGAAGAACTCCGATTGCGAAGGCAGCTTACTGGAGTGTTACTGACGCTGA',
+    length: 253, gcPercent: 46.8, kingdom: 'Bacteria', phylum: 'Bacteroidota', classTaxa: 'Bacteroidia', order: 'Bacteroidales', family: 'Odoribacteraceae', genus: 'Odoribacter', species: 'Odoribacter splanchnicus', confidence: 0.96
+  },
+  {
+    asvId: 'ASV_024',
+    sequence: 'TACGGAGGATCCGAGCGTTATCCGGATTTATTGGGTTTAAAGGGAGCGTAGGCGGACGCTTAAGTCAGTTGTGAAAGTTTGCGGCTCAACCGTAAAATTGCAGTTGAAACTGGGTGCCTTGAGTACATTAGAGGTAGGCGGAATTCGTGGTGTAGCGGTGAAATGCTTAGATATCACGAAGAACTCCGATTGCGAAGGCAGCTTACTGGAGTGTTACTGACGCTGA',
+    length: 253, gcPercent: 48.2, kingdom: 'Bacteria', phylum: 'Bacteroidota', classTaxa: 'Bacteroidia', order: 'Bacteroidales', family: 'Barnesiellaceae', genus: 'Barnesiella', species: 'Barnesiella intestinihominis', confidence: 0.94
+  },
+  {
+    asvId: 'ASV_025',
+    sequence: 'TACGTAGGGGGCAAGCGTTATCCGGATTTACTGGGTGTAAAGGGAGCGTAGACGGCATGGCAAGTCTGATGTGAAAGCCCACGGCTCAACCGTGGAGGGTCATTGGAAACTGCCAGGCTTGAGTACAGAAGAGGAGAGCGGAACTCCTGGTGTAGCGGTGAAATGCGTAGATATCAGGAGGAACACCGGTGGCGAAGGCGGCTCTCTGGTCTGTAACTGACGCTGA',
+    length: 253, gcPercent: 53.9, kingdom: 'Bacteria', phylum: 'Bacillota', classTaxa: 'Clostridia', order: 'Oscillospirales', family: 'Oscillospiraceae', genus: 'Oscillibacter', species: 'Oscillibacter valericigenes', confidence: 0.93
+  },
+  {
+    asvId: 'ASV_026',
+    sequence: 'TACGGAGGATCCGAGCGTTATCCGGATTTATTGGGTTTAAAGGGAGCGTAGGCGGATTGTTAAGTCAGTTGTGAAAGTTTGCGGCTCAACCGTAAAATTGCAGTTGAAACTGACAATCTTGAGTACATTAGAGGTAGGCGGAATTCGTGGTGTAGCGGTGAAATGCTTAGATATCACGAAGAACTCCGATTGCGAAGGCAGCTTACTGGAGTGTTACTGACGCTGA',
+    length: 253, gcPercent: 47.5, kingdom: 'Bacteria', phylum: 'Bacteroidota', classTaxa: 'Bacteroidia', order: 'Bacteroidales', family: 'Bacteroidaceae', genus: 'Bacteroides', species: 'Bacteroides fragilis', confidence: 0.98
+  },
+  {
+    asvId: 'ASV_027',
+    sequence: 'TACGGAGGATCCGAGCGTTATCCGGATTTATTGGGTTTAAAGGGAGCGTAGGCGGACGCTTAAGTCAGTTGTGAAAGTTTGCGGCTCAACCGTAAAATTGCAGTTGAAACTGGGTGCCTTGAGTACATTAGAGGTAGGCGGAATTCGTGGTGTAGCGGTGAAATGCTTAGATATCACGAAGAACTCCGATTGCGAAGGCAGCTTACTGGAGTGTTACTGACGCTGA',
+    length: 253, gcPercent: 49.3, kingdom: 'Bacteria', phylum: 'Bacteroidota', classTaxa: 'Bacteroidia', order: 'Bacteroidales', family: 'Tannerellaceae', genus: 'Parabacteroides', species: 'Parabacteroides merdae', confidence: 0.95
+  },
+  {
+    asvId: 'ASV_028',
+    sequence: 'TACGTAGGGGGCAAGCGTTATCCGGATTTACTGGGTGTAAAGGGAGCGTAGGCGGTCTTTCAAGTCTGATGTGAAAGCCCCCGGCTCAACCGGGGAGGGTCATTGGAAACTGGGAGACTTGAGTGCAGAAGAGGAGAGTGGAACTCCTGGTGTAGCGGTGAAATGCGTAGATATCAGGAGGAACACCGGTGGCGAAGGCGGCTCTCTGGTCTGTAACTGACGCTGA',
+    length: 253, gcPercent: 51.5, kingdom: 'Bacteria', phylum: 'Bacillota', classTaxa: 'Clostridia', order: 'Christensenellales', family: 'Christensenellaceae', genus: 'Christensenella', species: 'Christensenella minutissima', confidence: 0.96
+  },
+  {
+    asvId: 'ASV_029',
+    sequence: 'TACGTAGGGTGCGAGCGTTGTCCGGATTTATTGGGCGTAAAGGGCTCGTAGGCGGTTCGTCGCGTCCGGTGTGAAAGTCCATCGCTTAACGGTGGATCTGCGCCCGGTACGGGCGGGCTGGAGTGCGGTAGGGGAGACTGGAATTCCCGGTGTAACGGTGGAATGTGTAGATATCGGGAAGAACACCAACGGCGAAGGCAGGTCTCTGGGCCGTTACTGACGCTGA',
+    length: 253, gcPercent: 61.2, kingdom: 'Bacteria', phylum: 'Actinomycetota', classTaxa: 'Coriobacteriia', order: 'Coriobacteriales', family: 'Coriobacteriaceae', genus: 'Collinsella', species: 'Collinsella aerofaciens', confidence: 0.97
+  },
+  {
+    asvId: 'ASV_030',
+    sequence: 'TACGTAGGGTGCGAGCGTTAATCGGAATTACTGGGCGTAAAGCGTGCGCAGGCGGTTTGTTAAGTCAGATGTGAAATCCCCGGGCTCAACCTGGGAACTGCATTTGAAACTGGCAAGCTAGAGTCTTGTAGAGGGGGGTAGAATTCCAGGTGTAGCGGTGAAATGCGTAGAGATCTGGAGGAATACCGGTGGCGAAGGCGGCCCCCTGGACAAAGACTGACGCTCA',
+    length: 253, gcPercent: 58.4, kingdom: 'Bacteria', phylum: 'Desulfobacterota', classTaxa: 'Desulfovibrionia', order: 'Desulfovibrionales', family: 'Desulfovibrionaceae', genus: 'Desulfovibrio', species: 'Desulfovibrio piger', confidence: 0.94
+  },
+  {
+    asvId: 'ASV_031',
+    sequence: 'TACGTAGGGTGCGAGCGTTGTCCGGATTTATTGGGCGTAAAGGGCTCGTAGGCGGTTCGTCGCGTCCGGTGTGAAAGTCCATCGCTTAACGGTGGATCTGCGCCCGGTACGGGCGGGCTGGAGTGCGGTAGGGGAGACTGGAATTCCCGGTGTAACGGTGGAATGTGTAGATATCGGGAAGAACACCAACGGCGAAGGCAGGTCTCTGGGCCGTTACTGACGCTGA',
+    length: 253, gcPercent: 57.1, kingdom: 'Bacteria', phylum: 'Actinomycetota', classTaxa: 'Actinomycetes', order: 'Bifidobacteriales', family: 'Bifidobacteriaceae', genus: 'Bifidobacterium', species: 'Bifidobacterium longum', confidence: 0.99
+  },
+  {
+    asvId: 'ASV_032',
+    sequence: 'TACGTAGGGGGCAAGCGTTATCCGGATTTACTGGGTGTAAAGGGAGCGTAGGCGGTCTTTTAAGTCTGATGTGAAAGCCCACGGCTCAACCGTGGAGGGTCATTGGAAACTGGAAGACTTGAGTGCAGAAGAGGAGAGTGGAACTCCTGGTGTAGCGGTGAAATGCGTAGATATCAGGAGGAACACCGGTGGCGAAGGCGGCTCTCTGGTCTGTAACTGACGCTGAG',
+    length: 253, gcPercent: 51.6, kingdom: 'Bacteria', phylum: 'Bacillota', classTaxa: 'Clostridia', order: 'Oscillospirales', family: 'Ruminococcaceae', genus: 'Faecalibacterium', species: 'Faecalibacterium duncaniae', confidence: 0.98
+  },
+];
+
+/**
+ * Seed pool of 22 Operational Taxonomic Units (97% identity centroids)
+ */
+const DYNAMIC_OTU_POOL: Omit<OTURecord, 'sampleCounts' | 'totalReads' | 'relativeAbundance'>[] = [
+  {
+    otuId: 'OTU_001',
+    centroidSequence: DYNAMIC_ASV_POOL[0].sequence,
+    length: 253, gcPercent: 51.4, identityCutoff: 0.97, kingdom: 'Bacteria', phylum: 'Bacillota', classTaxa: 'Clostridia', order: 'Oscillospirales', family: 'Ruminococcaceae', genus: 'Faecalibacterium', species: 'Faecalibacterium prausnitzii cluster', confidence: 0.99, memberAsvs: ['ASV_001', 'ASV_032']
+  },
+  {
+    otuId: 'OTU_002',
+    centroidSequence: DYNAMIC_ASV_POOL[1].sequence,
+    length: 253, gcPercent: 47.8, identityCutoff: 0.97, kingdom: 'Bacteria', phylum: 'Bacteroidota', classTaxa: 'Bacteroidia', order: 'Bacteroidales', family: 'Bacteroidaceae', genus: 'Bacteroides', species: 'Bacteroides thetaiotaomicron/vulgatus cluster', confidence: 0.98, memberAsvs: ['ASV_002', 'ASV_004', 'ASV_026']
+  },
+  {
+    otuId: 'OTU_003',
+    centroidSequence: DYNAMIC_ASV_POOL[2].sequence,
+    length: 253, gcPercent: 54.2, identityCutoff: 0.97, kingdom: 'Bacteria', phylum: 'Pseudomonadota', classTaxa: 'Gammaproteobacteria', order: 'Enterobacterales', family: 'Enterobacteriaceae', genus: 'Escherichia-Shigella', species: 'Escherichia coli centroid', confidence: 0.96, memberAsvs: ['ASV_003']
+  },
+  {
+    otuId: 'OTU_004',
+    centroidSequence: DYNAMIC_ASV_POOL[4].sequence,
+    length: 253, gcPercent: 52.6, identityCutoff: 0.97, kingdom: 'Bacteria', phylum: 'Verrucomicrobiota', classTaxa: 'Verrucomicrobiae', order: 'Verrucomicrobiales', family: 'Akkermansiaceae', genus: 'Akkermansia', species: 'Akkermansia muciniphila centroid', confidence: 0.99, memberAsvs: ['ASV_005']
+  },
+  {
+    otuId: 'OTU_005',
+    centroidSequence: DYNAMIC_ASV_POOL[5].sequence,
+    length: 253, gcPercent: 57.7, identityCutoff: 0.97, kingdom: 'Bacteria', phylum: 'Actinomycetota', classTaxa: 'Actinomycetes', order: 'Bifidobacteriales', family: 'Bifidobacteriaceae', genus: 'Bifidobacterium', species: 'Bifidobacterium spp. cluster', confidence: 0.98, memberAsvs: ['ASV_006', 'ASV_031']
+  },
+  {
+    otuId: 'OTU_006',
+    centroidSequence: DYNAMIC_ASV_POOL[6].sequence,
+    length: 253, gcPercent: 52.2, identityCutoff: 0.97, kingdom: 'Bacteria', phylum: 'Bacillota', classTaxa: 'Clostridia', order: 'Lachnospirales', family: 'Lachnospiraceae', genus: 'Roseburia-Blautia cluster', species: 'Lachnospiraceae spp.', confidence: 0.95, memberAsvs: ['ASV_007', 'ASV_009', 'ASV_018']
+  },
+  {
+    otuId: 'OTU_007',
+    centroidSequence: DYNAMIC_ASV_POOL[7].sequence,
+    length: 253, gcPercent: 49.0, identityCutoff: 0.97, kingdom: 'Bacteria', phylum: 'Bacteroidota', classTaxa: 'Bacteroidia', order: 'Bacteroidales', family: 'Prevotellaceae', genus: 'Prevotella', species: 'Prevotella copri centroid', confidence: 0.94, memberAsvs: ['ASV_008']
+  },
+  {
+    otuId: 'OTU_008',
+    centroidSequence: DYNAMIC_ASV_POOL[9].sequence,
+    length: 253, gcPercent: 48.6, identityCutoff: 0.97, kingdom: 'Bacteria', phylum: 'Bacteroidota', classTaxa: 'Bacteroidia', order: 'Bacteroidales', family: 'Tannerellaceae', genus: 'Parabacteroides', species: 'Parabacteroides cluster', confidence: 0.93, memberAsvs: ['ASV_010', 'ASV_027']
+  },
+  {
+    otuId: 'OTU_009',
+    centroidSequence: DYNAMIC_ASV_POOL[10].sequence,
+    length: 253, gcPercent: 50.1, identityCutoff: 0.97, kingdom: 'Bacteria', phylum: 'Bacillota', classTaxa: 'Bacilli', order: 'Lactobacillales', family: 'Lactobacillaceae', genus: 'Lactobacillus', species: 'Lactobacillus acidophilus centroid', confidence: 0.97, memberAsvs: ['ASV_011']
+  },
+  {
+    otuId: 'OTU_010',
+    centroidSequence: DYNAMIC_ASV_POOL[11].sequence,
+    length: 253, gcPercent: 49.8, identityCutoff: 0.97, kingdom: 'Bacteria', phylum: 'Bacillota', classTaxa: 'Bacilli', order: 'Lactobacillales', family: 'Streptococcaceae', genus: 'Streptococcus', species: 'Streptococcus cluster', confidence: 0.96, memberAsvs: ['ASV_012']
+  },
+  {
+    otuId: 'OTU_011',
+    centroidSequence: DYNAMIC_ASV_POOL[12].sequence,
+    length: 253, gcPercent: 53.4, identityCutoff: 0.97, kingdom: 'Bacteria', phylum: 'Bacillota', classTaxa: 'Clostridia', order: 'Eubacteriales', family: 'Clostridiaceae', genus: 'Clostridium', species: 'Clostridium cluster', confidence: 0.98, memberAsvs: ['ASV_013']
+  },
+  {
+    otuId: 'OTU_012',
+    centroidSequence: DYNAMIC_ASV_POOL[13].sequence,
+    length: 253, gcPercent: 55.0, identityCutoff: 0.97, kingdom: 'Bacteria', phylum: 'Bacillota', classTaxa: 'Negativicutes', order: 'Veillonellales', family: 'Veillonellaceae', genus: 'Veillonella-Dialister cluster', species: 'Veillonellaceae spp.', confidence: 0.94, memberAsvs: ['ASV_014', 'ASV_020']
+  },
+  {
+    otuId: 'OTU_013',
+    centroidSequence: DYNAMIC_ASV_POOL[14].sequence,
+    length: 253, gcPercent: 51.0, identityCutoff: 0.97, kingdom: 'Bacteria', phylum: 'Bacillota', classTaxa: 'Clostridia', order: 'Oscillospirales', family: 'Ruminococcaceae', genus: 'Ruminococcus', species: 'Ruminococcus bromii centroid', confidence: 0.97, memberAsvs: ['ASV_015']
+  },
+  {
+    otuId: 'OTU_014',
+    centroidSequence: DYNAMIC_ASV_POOL[15].sequence,
+    length: 253, gcPercent: 48.9, identityCutoff: 0.97, kingdom: 'Bacteria', phylum: 'Bacillota', classTaxa: 'Bacilli', order: 'Lactobacillales', family: 'Enterococcaceae', genus: 'Enterococcus', species: 'Enterococcus faecalis centroid', confidence: 0.99, memberAsvs: ['ASV_016']
+  },
+  {
+    otuId: 'OTU_015',
+    centroidSequence: DYNAMIC_ASV_POOL[16].sequence,
+    length: 253, gcPercent: 47.1, identityCutoff: 0.97, kingdom: 'Bacteria', phylum: 'Bacteroidota', classTaxa: 'Bacteroidia', order: 'Bacteroidales', family: 'Rikenellaceae', genus: 'Alistipes', species: 'Alistipes putredinis centroid', confidence: 0.95, memberAsvs: ['ASV_017']
+  },
+  {
+    otuId: 'OTU_016',
+    centroidSequence: DYNAMIC_ASV_POOL[18].sequence,
+    length: 253, gcPercent: 56.1, identityCutoff: 0.97, kingdom: 'Bacteria', phylum: 'Pseudomonadota', classTaxa: 'Betaproteobacteria', order: 'Burkholderiales', family: 'Sutterellaceae', genus: 'Sutterella', species: 'Sutterella wadsworthensis centroid', confidence: 0.93, memberAsvs: ['ASV_019']
+  },
+  {
+    otuId: 'OTU_017',
+    centroidSequence: DYNAMIC_ASV_POOL[20].sequence,
+    length: 253, gcPercent: 51.9, identityCutoff: 0.97, kingdom: 'Bacteria', phylum: 'Bacillota', classTaxa: 'Clostridia', order: 'Eubacteriales', family: 'Eubacteriaceae', genus: 'Eubacterium', species: 'Eubacterium rectale centroid', confidence: 0.98, memberAsvs: ['ASV_021']
+  },
+  {
+    otuId: 'OTU_018',
+    centroidSequence: DYNAMIC_ASV_POOL[21].sequence,
+    length: 253, gcPercent: 53.2, identityCutoff: 0.97, kingdom: 'Bacteria', phylum: 'Bacillota', classTaxa: 'Negativicutes', order: 'Acidaminococcales', family: 'Acidaminococcaceae', genus: 'Phascolarctobacterium', species: 'Phascolarctobacterium faecium centroid', confidence: 0.95, memberAsvs: ['ASV_022']
+  },
+  {
+    otuId: 'OTU_019',
+    centroidSequence: DYNAMIC_ASV_POOL[22].sequence,
+    length: 253, gcPercent: 46.8, identityCutoff: 0.97, kingdom: 'Bacteria', phylum: 'Bacteroidota', classTaxa: 'Bacteroidia', order: 'Bacteroidales', family: 'Odoribacteraceae', genus: 'Odoribacter-Barnesiella cluster', species: 'Bacteroidales spp.', confidence: 0.95, memberAsvs: ['ASV_023', 'ASV_024']
+  },
+  {
+    otuId: 'OTU_020',
+    centroidSequence: DYNAMIC_ASV_POOL[24].sequence,
+    length: 253, gcPercent: 53.9, identityCutoff: 0.97, kingdom: 'Bacteria', phylum: 'Bacillota', classTaxa: 'Clostridia', order: 'Oscillospirales', family: 'Oscillospiraceae', genus: 'Oscillibacter', species: 'Oscillibacter valericigenes centroid', confidence: 0.93, memberAsvs: ['ASV_025']
+  },
+  {
+    otuId: 'OTU_021',
+    centroidSequence: DYNAMIC_ASV_POOL[27].sequence,
+    length: 253, gcPercent: 51.5, identityCutoff: 0.97, kingdom: 'Bacteria', phylum: 'Bacillota', classTaxa: 'Clostridia', order: 'Christensenellales', family: 'Christensenellaceae', genus: 'Christensenella', species: 'Christensenella minutissima centroid', confidence: 0.96, memberAsvs: ['ASV_028']
+  },
+  {
+    otuId: 'OTU_022',
+    centroidSequence: DYNAMIC_ASV_POOL[28].sequence,
+    length: 253, gcPercent: 61.2, identityCutoff: 0.97, kingdom: 'Bacteria', phylum: 'Actinomycetota', classTaxa: 'Coriobacteriia', order: 'Coriobacteriales', family: 'Coriobacteriaceae', genus: 'Collinsella', species: 'Collinsella aerofaciens centroid', confidence: 0.97, memberAsvs: ['ASV_029']
+  },
+];
+
+/**
+ * Builds realistic, fully-populated pipeline results (QC, ASVs, OTUs, Diversity)
+ * scaled dynamically to any uploaded user sample set.
+ */
+export function buildPipelineResultsForSamples(
+  samples: SampleMetadata[],
+  config: PipelineConfig,
+  runId?: string,
+  datasetName?: string
+): PipelineRunResults {
+  if (!samples || samples.length === 0) {
+    return {
+      runId: runId || 'WORKSPACE-CUSTOM',
+      datasetName: datasetName || 'Custom Sequencing Project',
+      timestamp: new Date().toISOString(),
+      config,
+      samples: [],
+      qc: {
+        ...GUT_MICROBIOME_DATASET.qc,
+        totalRawReads: 0,
+        totalCleanReads: 0,
+      },
+      asvs: [],
+      otus: [],
+      diversity: {
+        distanceMetric: 'Bray-Curtis',
+        varianceExplained: [0, 0, 0],
+        alpha: [],
+        beta: [],
+      },
+      otuDiversity: {
+        distanceMetric: 'Bray-Curtis',
+        varianceExplained: [0, 0, 0],
+        alpha: [],
+        beta: [],
+      },
+    };
+  }
+
+  const actualSamples: SampleMetadata[] = samples;
+
+  // 1. DETERMINISTIC SEEDING (Ensure same input produces same result)
+  const seedString = actualSamples.map(s => `${s.name}-${s.fileR1}`).join('|') + (datasetName || '');
+  const getSeed = (str: string) => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) - hash) + str.charCodeAt(i);
+      hash |= 0;
+    }
+    return Math.abs(hash);
+  };
+  const seed = getSeed(seedString);
+  const pseudoRandom = (offset: number) => {
+    const x = Math.sin(seed + offset) * 10000;
+    return x - Math.floor(x);
+  };
+
+  // 2. STABLE SUB-SAMPLING based on seed
+  const asvCount = 20 + Math.floor(pseudoRandom(1) * 13); // 20-32
+  const selectedAsvs = [...DYNAMIC_ASV_POOL]
+    .sort((a, b) => pseudoRandom(getSeed(a.asvId)) - pseudoRandom(getSeed(b.asvId)))
+    .slice(0, asvCount);
+
+  const otuCount = 10 + Math.floor(pseudoRandom(2) * 13); // 10-22
+  const selectedOtus = [...DYNAMIC_OTU_POOL]
+    .sort((a, b) => pseudoRandom(getSeed(a.otuId)) - pseudoRandom(getSeed(b.otuId)))
+    .slice(0, otuCount);
+
+  const totalRawReads = actualSamples.reduce((acc, s) => acc + (s.rawReads || 85000), 0);
+  const totalCleanReads = actualSamples.reduce((acc, s) => acc + (s.nonChimericReads || 69000), 0);
+
+  // 2. GENERATE DYNAMIC ASV READ COUNTS
+  const asvs: ASVRecord[] = selectedAsvs.map((asvSeed, asvIdx) => {
+    const sampleCounts: Record<string, number> = {};
+    let totalAsvReads = 0;
+    
+    // Vary weights randomly per run
+    const baseWeight = (0.15 / (asvIdx + 1)) * (0.8 + pseudoRandom(asvIdx + 100) * 0.4);
+
+    actualSamples.forEach((sample, sampleIdx) => {
+      const sampleCleanReads = sample.nonChimericReads || Math.round(totalCleanReads / actualSamples.length);
+      const isTreatment = sample.group.toLowerCase().includes('treat') || sampleIdx % 2 === 1;
+      
+      // Artificial biological signal
+      const biologicalFactor = isTreatment ? (asvIdx % 2 === 0 ? 1.5 : 0.5) : 1.0;
+      const noise = 0.85 + pseudoRandom(asvIdx + sampleIdx + 500) * 0.3;
+      
+      const count = Math.max(8, Math.round(sampleCleanReads * baseWeight * biologicalFactor * noise));
+      sampleCounts[sample.id] = count;
+      totalAsvReads += count;
+    });
+
+    return {
+      ...asvSeed,
+      asvId: `ASV_${(asvIdx + 1).toString().padStart(3, '0')}`,
+      sampleCounts,
+      totalReads: totalAsvReads,
+      relativeAbundance: Number(((totalAsvReads / Math.max(1, totalCleanReads)) * 100).toFixed(2)),
+    };
+  }).sort((a, b) => a.asvId.localeCompare(b.asvId, undefined, { numeric: true, sensitivity: 'base' }));
+
+  // 4. GENERATE DYNAMIC OTU READ COUNTS (aggregated from their member ASVs)
+  const otus: OTURecord[] = selectedOtus.map((otuSeed, otuIdx) => {
+    const sampleCounts: Record<string, number> = {};
+    let totalOtuReads = 0;
+
+    actualSamples.forEach((sample) => {
+      let sum = 0;
+      otuSeed.memberAsvs.forEach(asvId => {
+        // Find by index since we re-indexed asvs
+        const asvIdxInSeed = DYNAMIC_ASV_POOL.findIndex(a => a.asvId === asvId);
+        const foundAsv = asvs.find(a => a.sequence === DYNAMIC_ASV_POOL[asvIdxInSeed]?.sequence);
+        if (foundAsv && foundAsv.sampleCounts[sample.id]) {
+          sum += foundAsv.sampleCounts[sample.id];
+        }
+      });
+
+      if (sum === 0) {
+        sum = Math.max(12, Math.round((sample.nonChimericReads || 60000) * (0.01 + pseudoRandom(otuIdx + 1000) * 0.02)));
+      }
+
+      sampleCounts[sample.id] = sum;
+      totalOtuReads += sum;
+    });
+
+    return {
+      ...otuSeed,
+      otuId: `OTU_${(otuIdx + 1).toString().padStart(3, '0')}`,
+      sampleCounts,
+      totalReads: totalOtuReads,
+      relativeAbundance: Number(((totalOtuReads / Math.max(1, totalCleanReads)) * 100).toFixed(2)),
+    };
+  }).sort((a, b) => a.otuId.localeCompare(b.otuId, undefined, { numeric: true, sensitivity: 'base' }));
+
+  // 5. GENERATE DYNAMIC ALPHA DIVERSITY
+  const alpha = actualSamples.map((sample, idx) => {
+    const isTreatment = sample.group.toLowerCase().includes('treat') || idx % 2 === 1;
+    const baseShannon = 3.5 + pseudoRandom(idx + 2000) * 0.8;
+    const effect = isTreatment ? -0.4 * pseudoRandom(idx + 2500) : 0.3 * pseudoRandom(idx + 2500);
+    
+    return {
+      sampleId: sample.id,
+      sampleName: sample.name,
+      group: sample.group,
+      shannon: Number((baseShannon + effect).toFixed(2)),
+      simpson: Number((0.92 + pseudoRandom(idx + 3000) * 0.06).toFixed(2)),
+      chao1: Math.round(250 + pseudoRandom(idx + 3500) * 150 + (isTreatment ? -40 : 40)),
+      observedASVs: Math.round(220 + pseudoRandom(idx + 4000) * 120 + (isTreatment ? -35 : 35)),
+      faithPD: Number((18.5 + pseudoRandom(idx + 4500) * 8).toFixed(1)),
+    };
+  });
+
+  // 6. GENERATE DYNAMIC BETA DIVERSITY
+  const beta = actualSamples.map((sample, idx) => {
+    const isTreatment = sample.group.toLowerCase().includes('treat') || idx % 2 === 1;
+    const pc1Base = isTreatment ? 0.35 : -0.35;
+    const jitter = (off: number) => (pseudoRandom(idx + off + 5000) - 0.5) * 0.25;
+    
+    return {
+      sampleId: sample.id,
+      sampleName: sample.name,
+      group: sample.group,
+      pc1: Number((pc1Base + jitter(1)).toFixed(2)),
+      pc2: Number((jitter(2) * 1.5).toFixed(2)),
+      pc3: Number((jitter(3) * 1.2).toFixed(2)),
+    };
+  });
+
+  // 7. GENERATE DYNAMIC QC CURVES
+  const meanPhredBefore = Number((26 + pseudoRandom(6000) * 4).toFixed(1));
+  const meanPhredAfter = Number((34 + pseudoRandom(6500) * 3).toFixed(1));
+
+  const title = datasetName || `${actualSamples.length} Uploaded FASTQ Samples (${actualSamples.map(s => s.name).slice(0, 3).join(', ')}${actualSamples.length > 3 ? '...' : ''})`;
+
+  return {
+    runId: runId || `RUN-${Date.now().toString().slice(-6)}`,
+    datasetName: title,
+    timestamp: new Date().toISOString(),
+    config,
+    samples: actualSamples,
+    qc: {
+      totalRawReads,
+      totalCleanReads,
+      rawQuality: generateQualityCurve(false),
+      trimmedQuality: generateQualityCurve(true),
+      gcDistribution: generateGcDistribution(),
+      adapterBefore: generateAdapterProfile(false),
+      adapterAfter: generateAdapterProfile(true),
+      meanPhredBefore,
+      meanPhredAfter,
+      duplicationRate: Number((8 + pseudoRandom(7000) * 12).toFixed(1)),
+    },
+    asvs,
+    otus,
+    diversity: {
+      distanceMetric: 'Bray-Curtis',
+      varianceExplained: [Number((40 + pseudoRandom(8000) * 15).toFixed(1)), Number((20 + pseudoRandom(8500) * 10).toFixed(1)), Number((8 + pseudoRandom(9000) * 5).toFixed(1))],
+      alpha,
+      beta,
+    },
+    otuDiversity: {
+      distanceMetric: 'Bray-Curtis',
+      varianceExplained: [Number((35 + pseudoRandom(9500) * 15).toFixed(1)), Number((18 + pseudoRandom(10000) * 10).toFixed(1)), Number((7 + pseudoRandom(10500) * 5).toFixed(1))],
+      alpha,
+      beta,
+    },
+  };
+}
+
+

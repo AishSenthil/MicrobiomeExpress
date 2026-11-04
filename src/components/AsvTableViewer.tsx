@@ -45,7 +45,10 @@ export const AsvTableViewer: React.FC<AsvTableViewerProps> = ({
   const [selectedPhylum, setSelectedPhylum] = useState<string>('all');
   const [minAbundance, setMinAbundance] = useState<number>(0);
   const [inspectingItem, setInspectingItem] = useState<ASVRecord | OTURecord | null>(null);
-  const [sortConfig, setSortConfig] = useState<{key: string, direction: 'asc' | 'desc'} | null>(null);
+  const [sortConfig, setSortConfig] = useState<{key: string, direction: 'asc' | 'desc'} | null>({
+    key: 'totalReads',
+    direction: 'desc'
+  });
   const [copiedSeq, setCopiedSeq] = useState(false);
 
   const isOtu = activeMode === 'OTU';
@@ -273,8 +276,17 @@ export const AsvTableViewer: React.FC<AsvTableViewerProps> = ({
           </div>
         </div>
 
-        <div className="text-slate-500 font-mono text-[11px]">
-          Showing <span className="font-bold text-slate-800">{filteredList.length}</span> of {currentList.length} {activeMode}s
+        <div className="flex items-center gap-3 text-slate-500 font-mono text-[11px]">
+          <div className="flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+            <span className="text-slate-400">Sort:</span>
+            <span className="font-bold text-blue-700 capitalize">
+              {sortConfig?.key === 'totalReads' ? 'Abundance' : sortConfig?.key === 'id' ? 'ID' : sortConfig?.key}
+            </span>
+            <span className="text-slate-400">{sortConfig?.direction === 'desc' ? ' (High to Low)' : ' (Low to High)'}</span>
+          </div>
+          <div>
+            Showing <span className="font-bold text-slate-800">{filteredList.length}</span> of {currentList.length} {activeMode}s
+          </div>
         </div>
       </div>
 

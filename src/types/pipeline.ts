@@ -69,6 +69,12 @@ export interface BatchJobState {
   chunks: BatchChunkInfo[];
   estimatedRemainingSec: number;
   currentStageName: string;
+  // Verification & Ingestion Details
+  detectedFileCount?: number;
+  verifiedFileCount?: number;
+  ingestedFileCount?: number;
+  stagingProgress?: number; // 0-100
+  storageBucket?: string;
 }
 
 export type PipelineStageId = 
@@ -197,6 +203,7 @@ export interface DiversityData {
 
 export interface PipelineRunResults {
   runId: string;
+  datasetName?: string;
   timestamp: string;
   samples: SampleMetadata[];
   config: PipelineConfig;

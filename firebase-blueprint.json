@@ -1,0 +1,105 @@
+{
+  "entities": {
+    "PipelineRun": {
+      "title": "Pipeline Run",
+      "description": "Records details of an amplicon sequencing pipeline execution including sample count, read yield, and denoising results.",
+      "type": "object",
+      "properties": {
+        "runId": {
+          "type": "string",
+          "description": "Unique identifier for the pipeline run",
+          "maxLength": 128
+        },
+        "datasetName": {
+          "type": "string",
+          "description": "Name or title of the processed cohort",
+          "maxLength": 256
+        },
+        "executionMode": {
+          "type": "string",
+          "description": "Execution orchestrator mode (local or cloud_batch)",
+          "enum": ["local", "cloud_batch"]
+        },
+        "status": {
+          "type": "string",
+          "description": "Execution completion status",
+          "enum": ["completed", "failed", "running"]
+        },
+        "sampleCount": {
+          "type": "number",
+          "description": "Total number of FASTQ biological samples in the manifest"
+        },
+        "totalRawReads": {
+          "type": "number",
+          "description": "Total raw sequenced reads before filtering"
+        },
+        "totalCleanReads": {
+          "type": "number",
+          "description": "Clean non-chimeric reads after DADA2/removeBimera"
+        },
+        "asvCount": {
+          "type": "number",
+          "description": "Total 100% resolution ASVs generated"
+        },
+        "otuCount": {
+          "type": "number",
+          "description": "Total 97% clustered OTUs generated"
+        },
+        "duration": {
+          "type": "string",
+          "description": "Total execution runtime duration",
+          "maxLength": 64
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp of execution creation",
+          "maxLength": 64
+        }
+      },
+      "required": ["runId", "datasetName", "status", "sampleCount", "totalRawReads", "totalCleanReads", "createdAt"]
+    },
+    "GlobalAnalytics": {
+      "title": "Global Analytics Aggregate",
+      "description": "Real-time aggregated platform metrics tracking cluster executions and cloud storage across all users.",
+      "type": "object",
+      "properties": {
+        "totalRuns": {
+          "type": "number",
+          "description": "Cumulative total of completed pipeline executions"
+        },
+        "totalSamplesProcessed": {
+          "type": "number",
+          "description": "Cumulative samples processed"
+        },
+        "totalRawReads": {
+          "type": "number",
+          "description": "Cumulative sequenced reads processed"
+        },
+        "storageUsedGb": {
+          "type": "number",
+          "description": "Total active cloud storage used in Gigabytes"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of last update",
+          "maxLength": 64
+        }
+      },
+      "required": ["totalRuns", "totalSamplesProcessed", "storageUsedGb", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/pipeline_runs/{runId}": {
+      "schema": "PipelineRun",
+      "description": "Collection of all executed pipeline runs across cohorts."
+    },
+    "/pipeline_results/{runId}": {
+      "schema": "object",
+      "description": "Full JSON results objects for each run, used for deep data visualization."
+    },
+    "/analytics/summary": {
+      "schema": "GlobalAnalytics",
+      "description": "Single document holding aggregated usage statistics."
+    }
+  }
+}

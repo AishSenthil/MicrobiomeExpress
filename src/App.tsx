@@ -32,13 +32,16 @@ import {
   PipelineStage, 
   SampleMetadata,
   ASVRecord,
-  BatchJobState
+  BatchJobState,
+  BatchChunkInfo
 } from './types/pipeline';
 import { 
   GUT_MICROBIOME_DATASET, 
   GUT_SINGLE_END_DATASET,
   SOIL_MICROBIOME_DATASET, 
-  DEFAULT_PIPELINE_CONFIG 
+  DEFAULT_PIPELINE_CONFIG,
+  CLEAN_USER_DATASET,
+  buildPipelineResultsForSamples
 } from './data/mockDatasets';
 
 import { Header } from './components/Header';
@@ -55,8 +58,9 @@ import { ReportGeneratorModal } from './components/ReportGeneratorModal';
 import { CodeHubModal } from './components/CodeHubModal';
 import { BatchHistoryTab } from './components/BatchHistoryTab';
 import { PhylogeneticTree } from './components/PhylogeneticTree';
+import { InteractiveTour } from './components/InteractiveTour';
+import { persistPipelineRun, fetchPersistentPipelineRuns, PersistentPipelineRun, fetchFullPipelineRun, deletePipelineRun } from './services/pipelineStorageService';
 
-// Initial pipeline stages setup
 const INITIAL_STAGES: PipelineStage[] = [
   {
     id: 'fastqc_raw',
@@ -65,8 +69,14 @@ const INITIAL_STAGES: PipelineStage[] = [
     version: 'v0.12.1',
     status: 'completed',
     duration: '18s',
-    summary: 'Analyzed 516,370 raw paired reads. Detected Illumina adapter read-through at 3-prime end.',
-    logs: ['INFO: Started FastQC v0.12.1.'],
+    summary: 'Analyzed raw paired reads. Detected Illumina adapter read-through at 3-prime end.',
+    logs: [
+      'INFO: Executing FastQC v0.12.1 --threads 8 --outdir ./results/qc/fastqc_raw',
+      'INFO: Processing paired-end FASTQ inputs across experimental manifest.',
+      'INFO: Calculated Phred quality distribution across 250 positions.',
+      'WARN: Sequence Duplication Levels high (> 18.4%) - expected for high-depth amplicon libraries.',
+      'INFO: FastQC raw report successfully generated: HTML & zip artifacts saved.',
+    ],
     cpuUsage: 85,
     memoryUsage: 4096,
   },
@@ -77,8 +87,14 @@ const INITIAL_STAGES: PipelineStage[] = [
     version: 'v4.4',
     status: 'completed',
     duration: '26s',
-    summary: 'Trimmed 515F/806R primers.',
-    logs: ['INFO: Executing Cutadapt v4.4.'],
+    summary: 'Trimmed 515F/806R primers and Illumina universal adapters.',
+    logs: [
+      'INFO: Executing Cutadapt v4.4 -g GTGCCAGCMGCCGCGGTAA -G GGACTACHVGGGTWTCTAAT --minimum-length 180 --error-rate 0.1',
+      'INFO: Processing paired-end sample reads across 8 threads.',
+      'INFO: Trimmed 515F forward primer (19 bp) from 516,370 reads.',
+      'INFO: Trimmed 806R reverse primer (20 bp) from 516,370 reads.',
+      'INFO: Total reads written: 512,180 (99.2% retained).',
+    ],
     cpuUsage: 92,
     memoryUsage: 8192,
   },
@@ -89,8 +105,14 @@ const INITIAL_STAGES: PipelineStage[] = [
     version: 'v1.28.0',
     status: 'completed',
     duration: '1m 14s',
-    summary: 'Learned error rates, resolved ASVs.',
-    logs: ['INFO: Initializing DADA2.'],
+    summary: 'Learned error rates, resolved exact ASVs, merged paired reads.',
+    logs: [
+      'INFO: Initializing R dada2 package v1.28.0 with multithread=TRUE.',
+      'INFO: Learning error rates: errF (Forward) and errR (Reverse) converged in 5 transitions.',
+      'INFO: DADA2 dereplication and sample inference completed across all samples.',
+      'INFO: Merging paired reads: minOverlap=20, maxMismatch=0.',
+      'INFO: 485 unique Amplicon Sequence Variants (ASVs) inferred.',
+    ],
     cpuUsage: 98,
     memoryUsage: 16384,
   },
@@ -101,8 +123,13 @@ const INITIAL_STAGES: PipelineStage[] = [
     version: 'v1.28.0',
     status: 'completed',
     duration: '12s',
-    summary: 'Identified and filtered bimeric PCR artifacts.',
-    logs: ['INFO: Calling removeBimeraDenovo.'],
+    summary: 'Identified and filtered bimeric PCR artifacts via consensus method.',
+    logs: [
+      'INFO: Running removeBimeraDenovo(seqtab, method="consensus", multithread=TRUE).',
+      'INFO: Identified 35 chimeric sequence variants out of 485 total ASVs (7.2%).',
+      'INFO: Retained 450 non-chimeric ASVs representing 482,900 total clean reads.',
+      'INFO: Sequence table sanitized and saved to ./results/dada2/seqtab_final.rds.',
+    ],
     cpuUsage: 75,
     memoryUsage: 2048,
   },
@@ -113,8 +140,12 @@ const INITIAL_STAGES: PipelineStage[] = [
     version: 'v2.22.1',
     status: 'completed',
     duration: '14s',
-    summary: 'Clustered ASVs into OTU centroids.',
-    logs: ['INFO: Running VSEARCH.'],
+    summary: 'Clustered non-chimeric ASVs into 97% OTU centroids.',
+    logs: [
+      'INFO: Executing VSEARCH v2.22.1 --cluster_fast ./results/asvs.fasta --id 0.97 --centroids ./results/otus_97.fasta',
+      'INFO: Clustered 450 exact ASVs into 380 Operational Taxonomic Units (97% identity).',
+      'INFO: Generated ASV-to-OTU membership mapping table (asv_to_otu_map.tsv).',
+    ],
     cpuUsage: 60,
     memoryUsage: 4096,
   },
@@ -125,8 +156,13 @@ const INITIAL_STAGES: PipelineStage[] = [
     version: 'NR99',
     status: 'completed',
     duration: '45s',
-    summary: 'Classified ASVs against SILVA 138.1.',
-    logs: ['INFO: Assigning taxonomy.'],
+    summary: 'Classified feature sequences against SILVA 138.1 SSURef database.',
+    logs: [
+      'INFO: RDP Naive Bayesian Classifier initialized with silva_nr99_v138.1_train_set.fa.gz.',
+      'INFO: Assigning taxonomy to 450 ASVs at 80% bootstrap confidence threshold.',
+      'INFO: Species assignment using silva_species_assignment_v138.1.fa.gz.',
+      'INFO: 98.2% classified to Phylum, 84.6% to Genus, 62.1% to Species level.',
+    ],
     cpuUsage: 88,
     memoryUsage: 12288,
   },
@@ -137,22 +173,59 @@ const INITIAL_STAGES: PipelineStage[] = [
     version: 'v0.5.8',
     status: 'completed',
     duration: '8s',
-    summary: 'Calculated alpha diversity and Bray-Curtis PCoA.',
-    logs: ['INFO: Computing Alpha diversity.'],
+    summary: 'Calculated alpha diversity indices and Bray-Curtis PCoA ordination.',
+    logs: [
+      'INFO: Calculating Alpha diversity: Shannon, Simpson, Chao1, Observed ASVs, Faith PD.',
+      'INFO: Computing Bray-Curtis dissimilarity distance matrix.',
+      'INFO: Performing Principal Coordinate Analysis (PCoA): PC1=48.2%, PC2=24.6%, PC3=9.4%.',
+      'INFO: Executing PERMANOVA statistical test: pseudo-F=14.2, p-value=0.002 (Significant).',
+    ],
     cpuUsage: 40,
     memoryUsage: 2048,
   },
 ];
 
+const PENDING_STAGES: PipelineStage[] = INITIAL_STAGES.map(s => ({
+  ...s,
+  status: 'pending',
+  duration: undefined,
+  logs: ['Stage queued and awaiting input sequencing data.'],
+  cpuUsage: 0,
+  memoryUsage: 0,
+}));
+
+
+
 export default function App() {
-  const [currentDataset, setCurrentDataset] = useState<PipelineRunResults>(GUT_MICROBIOME_DATASET);
-  const [pipelineConfig, setPipelineConfig] = useState<PipelineConfig>(GUT_MICROBIOME_DATASET.config);
-  const [stages, setStages] = useState<PipelineStage[]>(INITIAL_STAGES);
+  const [currentDataset, setCurrentDataset] = useState<PipelineRunResults>(CLEAN_USER_DATASET);
+  const [pipelineConfig, setPipelineConfig] = useState<PipelineConfig>(CLEAN_USER_DATASET.config);
+  const [recentRuns, setRecentRuns] = useState<PersistentPipelineRun[]>([]);
+  const [stages, setStages] = useState<PipelineStage[]>(PENDING_STAGES);
   const [isRunning, setIsRunning] = useState<boolean>(false);
-  const [activeStageId, setActiveStageId] = useState<string>('otu_clustering');
+  const [activeStageId, setActiveStageId] = useState<string>('fastqc_raw');
   const [activeTab, setActiveTab] = useState<'overview' | 'qc' | 'taxa' | 'diversity' | 'asv_table' | 'history' | 'phylogeny'>('overview');
   const [featureMode, setFeatureMode] = useState<'ASV' | 'OTU'>('ASV');
   const [view, setView] = useState<'landing' | 'app'>('landing');
+  const [isTourOpen, setIsTourOpen] = useState(false);
+
+  const handleLaunchStudio = (dataset?: PipelineRunResults, openUpload: boolean = false) => {
+    if (dataset) {
+      handleSelectDataset(dataset);
+    } else {
+      handleSelectDataset(CLEAN_USER_DATASET);
+    }
+    setView('app');
+    if (openUpload) {
+      setIsUploadOpen(true);
+      setIsTourOpen(false);
+    } else {
+      const hasSeenTour = localStorage.getItem('microbiome_xpress_tour_seen');
+      if (!hasSeenTour) {
+        setIsTourOpen(true);
+        localStorage.setItem('microbiome_xpress_tour_seen', 'true');
+      }
+    }
+  };
 
   // Modals
   const [isConfigOpen, setIsConfigOpen] = useState(false);
@@ -164,108 +237,209 @@ export default function App() {
     layout: string;
   } | null>(null);
 
-  const [batchJobState, setBatchJobState] = useState<BatchJobState | null>({
-    jobId: 'JOB-CELERY-BATCH-8419',
-    active: false,
-    mode: 'cloud_batch',
-    status: 'completed',
-    cloudUri: 'gs://microbiome-runs-staging/cohort-2026',
-    totalSamples: 6,
-    processedSamples: 6,
-    totalChunks: 3,
-    currentChunkIndex: 3,
-    estimatedRemainingSec: 0,
-    currentStageName: 'All Chunks Completed',
-    chunks: [
-      {
-        chunkIndex: 1,
-        totalChunks: 3,
-        sampleIds: ['S01', 'S02'],
-        status: 'completed',
-        readCount: 168000,
-        memoryMb: 3840,
-        duration: '18s',
-        workerId: 'celery-worker-01',
-      },
-      {
-        chunkIndex: 2,
-        totalChunks: 3,
-        sampleIds: ['S03', 'S04'],
-        status: 'completed',
-        readCount: 172000,
-        memoryMb: 4120,
-        duration: '21s',
-        workerId: 'celery-worker-02',
-      },
-      {
-        chunkIndex: 3,
-        totalChunks: 3,
-        sampleIds: ['S05', 'S06'],
-        status: 'completed',
-        readCount: 164000,
-        memoryMb: 3950,
-        duration: '19s',
-        workerId: 'celery-worker-03',
-      },
-    ],
-  });
+  const [batchJobState, setBatchJobState] = useState<BatchJobState | null>(null);
+
+  const loadRecentRuns = async () => {
+    const runs = await fetchPersistentPipelineRuns();
+    setRecentRuns(runs);
+  };
+
+  useEffect(() => {
+    loadRecentRuns();
+  }, []);
+
+  const handleSelectRunId = async (runId: string) => {
+    if (runId === CLEAN_USER_DATASET.runId) {
+      handleSelectDataset(CLEAN_USER_DATASET);
+      return;
+    }
+    const fullRun = await fetchFullPipelineRun(runId);
+    if (fullRun) {
+      handleSelectDataset(fullRun);
+    }
+  };
+
+  const handleDeleteRun = async (runId: string) => {
+    try {
+      await deletePipelineRun(runId);
+      // If we are currently viewing the run we just deleted, switch to clean workspace
+      if (currentDataset.runId === runId) {
+        handleSelectDataset(CLEAN_USER_DATASET);
+      }
+      // Refresh the list
+      loadRecentRuns();
+    } catch (err) {
+      console.error('Failed to delete run:', err);
+      alert('Failed to delete project run. Please check console for details.');
+    }
+  };
 
   // Sync config when dataset switches
   const handleSelectDataset = (dataset: PipelineRunResults) => {
     setCurrentDataset(dataset);
     setPipelineConfig(dataset.config);
+    if (dataset.samples.length === 0) {
+      setStages(PENDING_STAGES);
+      setBatchJobState(null);
+      setActiveStageId('fastqc_raw');
+    } else {
+      setStages(INITIAL_STAGES);
+      setActiveStageId('otu_clustering');
+      setBatchJobState({
+        jobId: `JOB-${dataset.runId}`,
+        active: false,
+        mode: dataset.config.executionMode,
+        status: 'completed',
+        cloudUri: dataset.config.cloudBucketUri,
+        totalSamples: dataset.samples.length,
+        processedSamples: dataset.samples.length,
+        totalChunks: 3,
+        currentChunkIndex: 3,
+        estimatedRemainingSec: 0,
+        currentStageName: 'All Chunks Completed',
+        detectedFileCount: dataset.samples.length * 2,
+        ingestedFileCount: dataset.samples.length * 2,
+        storageBucket: dataset.config.cloudBucketUri || 'gs://microbiome-runs-staging',
+        stagingProgress: 100,
+        chunks: [
+          {
+            chunkIndex: 1,
+            totalChunks: 3,
+            sampleIds: dataset.samples.slice(0, 2).map(s => s.id),
+            status: 'completed',
+            readCount: 168000,
+            memoryMb: 3840,
+            duration: '18s',
+            workerId: 'celery-worker-01',
+          },
+          {
+            chunkIndex: 2,
+            totalChunks: 3,
+            sampleIds: dataset.samples.slice(2, 4).map(s => s.id),
+            status: 'completed',
+            readCount: 172000,
+            memoryMb: 4120,
+            duration: '21s',
+            workerId: 'celery-worker-02',
+          },
+          {
+            chunkIndex: 3,
+            totalChunks: 3,
+            sampleIds: dataset.samples.slice(4).map(s => s.id),
+            status: 'completed',
+            readCount: 164000,
+            memoryMb: 3950,
+            duration: '19s',
+            workerId: 'celery-worker-03',
+          },
+        ],
+      });
+    }
   };
 
   // Run Pipeline Execution Simulation
-  const handleRunPipeline = async () => {
+  const handleRunPipeline = async (overrideSamples?: SampleMetadata[], overrideTitle?: string) => {
     if (isRunning) return;
     setStagedNotification(null);
     setIsRunning(true);
 
+    const samplesToRun = (overrideSamples && overrideSamples.length > 0)
+      ? overrideSamples
+      : (currentDataset.samples.length > 0 ? currentDataset.samples : []);
+
+    if (samplesToRun.length === 0) {
+      setIsRunning(false);
+      setIsUploadOpen(true);
+      return;
+    }
+
+    const titleToRun = overrideTitle || (overrideSamples && overrideSamples.length > 0
+      ? `${overrideSamples.length} Uploaded FASTQ Samples (${overrideSamples.map(s => s.name).slice(0, 3).join(', ')}${overrideSamples.length > 3 ? '...' : ''})`
+      : currentDataset.datasetName);
+
+    // 1. SET STAGED DATASET (No results yet, just manifest and raw read counts)
+    const stagedDataset: PipelineRunResults = {
+      runId: `RUN-${Date.now().toString().slice(-6)}`,
+      datasetName: titleToRun,
+      timestamp: new Date().toISOString(),
+      config: pipelineConfig,
+      samples: samplesToRun,
+      qc: {
+        totalRawReads: samplesToRun.reduce((acc, s) => acc + (s.rawReads || 85000), 0),
+        totalCleanReads: 0,
+        rawQuality: [],
+        trimmedQuality: [],
+        gcDistribution: [],
+        adapterBefore: [],
+        adapterAfter: [],
+        meanPhredBefore: 0,
+        meanPhredAfter: 0,
+        duplicationRate: 0,
+      },
+      asvs: [],
+      otus: [],
+      diversity: {
+        distanceMetric: 'Bray-Curtis',
+        varianceExplained: [0, 0, 0],
+        alpha: [],
+        beta: [],
+      },
+      otuDiversity: {
+        distanceMetric: 'Bray-Curtis',
+        varianceExplained: [0, 0, 0],
+        alpha: [],
+        beta: [],
+      },
+    };
+
+    setCurrentDataset(stagedDataset);
+
     const isCloudBatch = pipelineConfig.executionMode === 'cloud_batch';
     if (isCloudBatch) {
+      const chunkSize = pipelineConfig.batchChunkSize || 2;
+      const totalSamples = stagedDataset.samples.length;
+      const chunks: BatchChunkInfo[] = [];
+      for (let i = 0; i < totalSamples; i += chunkSize) {
+        const chunkSamples = stagedDataset.samples.slice(i, i + chunkSize);
+        const chunkIdx: number = chunks.length + 1;
+        chunks.push({
+          chunkIndex: chunkIdx,
+          totalChunks: Math.ceil(totalSamples / chunkSize),
+          sampleIds: chunkSamples.map(s => s.id),
+          status: chunkIdx === 1 ? ('processing' as const) : ('pending' as const),
+          readCount: chunkSamples.reduce((a, b) => a + (b.rawReads || 85000), 0),
+          memoryMb: chunkIdx === 1 ? 3840 : 0,
+          workerId: `celery-worker-${chunkIdx.toString().padStart(2, '0')}`,
+        });
+      }
+
       setBatchJobState({
         jobId: `JOB-BATCH-${Math.floor(1000 + Math.random() * 9000)}`,
         active: true,
         mode: 'cloud_batch',
         status: 'batch_processing',
         cloudUri: pipelineConfig.cloudBucketUri || 'gs://microbiome-runs-staging/cohort-2026',
-        totalSamples: currentDataset.samples.length,
+        totalSamples,
         processedSamples: 0,
-        totalChunks: 3,
+        totalChunks: chunks.length,
         currentChunkIndex: 1,
         estimatedRemainingSec: 35,
-        currentStageName: 'Processing Chunk 1 (S01, S02)',
-        chunks: [
-          {
-            chunkIndex: 1,
-            totalChunks: 3,
-            sampleIds: [currentDataset.samples[0]?.id || 'S01', currentDataset.samples[1]?.id || 'S02'],
-            status: 'processing',
-            readCount: 168000,
-            memoryMb: 3840,
-            workerId: 'celery-worker-01',
-          },
-          {
-            chunkIndex: 2,
-            totalChunks: 3,
-            sampleIds: [currentDataset.samples[2]?.id || 'S03', currentDataset.samples[3]?.id || 'S04'],
-            status: 'pending',
-            readCount: 172000,
-            memoryMb: 0,
-            workerId: 'celery-worker-02',
-          },
-          {
-            chunkIndex: 3,
-            totalChunks: 3,
-            sampleIds: [currentDataset.samples[4]?.id || 'S05', currentDataset.samples[5]?.id || 'S06'],
-            status: 'pending',
-            readCount: 164000,
-            memoryMb: 0,
-            workerId: 'celery-worker-03',
-          },
-        ],
+        currentStageName: `Staging 0/${totalSamples * 2} files to Cloud Storage...`,
+        detectedFileCount: totalSamples * 2,
+        verifiedFileCount: totalSamples * 2,
+        ingestedFileCount: 0,
+        stagingProgress: 0,
+        storageBucket: pipelineConfig.cloudBucketUri || 'gs://microbiome-runs-staging/cohort-2026',
+        chunks,
       });
+
+      // Simulate staging delay
+      await new Promise(r => setTimeout(r, 1500));
+      setBatchJobState(prev => prev ? {
+        ...prev,
+        stagingProgress: 100,
+        currentStageName: `Ingestion Verified. Starting Chunk 1 (${chunks[0]?.sampleIds.join(', ') || ''})`,
+      } : null);
     }
 
     // Reset stages to pending
@@ -289,11 +463,11 @@ export default function App() {
       // Update batch chunk progress dynamically as pipeline stages advance
       if (isCloudBatch) {
         if (i === 1) {
-          // Trimming: chunk 1 done, chunk 2 processing
           setBatchJobState(prev => prev ? {
             ...prev,
             currentChunkIndex: 2,
-            processedSamples: 2,
+            processedSamples: Math.min(prev.totalSamples, 2),
+            ingestedFileCount: Math.min(prev.detectedFileCount || 0, 4),
             currentStageName: 'Trimming Primer Adapters (Chunk 2)',
             chunks: prev.chunks.map(c => 
               c.chunkIndex === 1 ? { ...c, status: 'completed', duration: '14s' } :
@@ -301,11 +475,11 @@ export default function App() {
             )
           } : null);
         } else if (i === 2) {
-          // Denoising: chunk 2 done, chunk 3 processing
           setBatchJobState(prev => prev ? {
             ...prev,
             currentChunkIndex: 3,
-            processedSamples: 4,
+            processedSamples: Math.min(prev.totalSamples, 4),
+            ingestedFileCount: Math.min(prev.detectedFileCount || 0, 8),
             currentStageName: 'DADA2 Error Learning & Denoising (Chunk 3)',
             chunks: prev.chunks.map(c => 
               c.chunkIndex <= 2 ? { ...c, status: 'completed', duration: '20s' } :
@@ -313,18 +487,17 @@ export default function App() {
             )
           } : null);
         } else if (i === 3) {
-          // Chimera: all 3 chunks completed, aggregating
           setBatchJobState(prev => prev ? {
             ...prev,
-            currentChunkIndex: 3,
-            processedSamples: 6,
+            currentChunkIndex: prev.totalChunks,
+            processedSamples: prev.totalSamples,
+            ingestedFileCount: prev.detectedFileCount,
             currentStageName: 'Consensus Chimera Removal (All Chunks Merged)',
             chunks: prev.chunks.map(c => ({ ...c, status: 'completed', duration: '18s' }))
           } : null);
         }
       }
 
-      // Simulate realistic execution timing
       await new Promise(r => setTimeout(r, 1100));
 
       // Mark stage completed
@@ -340,16 +513,33 @@ export default function App() {
       }));
     }
 
+    // 2. GENERATE AND SET FINAL DATASET
+    const finalDataset = buildPipelineResultsForSamples(
+      samplesToRun,
+      pipelineConfig,
+      stagedDataset.runId,
+      titleToRun
+    );
+
     if (isCloudBatch) {
       setBatchJobState(prev => prev ? {
         ...prev,
         status: 'completed',
         active: false,
-        processedSamples: currentDataset.samples.length,
+        processedSamples: finalDataset.samples.length,
+        ingestedFileCount: finalDataset.samples.length * 2,
         currentStageName: 'All Chunks Successfully Processed in Cloud',
         chunks: prev.chunks.map(c => ({ ...c, status: 'completed' }))
       } : null);
     }
+
+    setCurrentDataset(finalDataset);
+
+    persistPipelineRun(finalDataset).then(() => {
+      loadRecentRuns();
+    }).catch((err) => {
+      console.warn('Could not persist pipeline run to database:', err);
+    });
 
     setIsRunning(false);
     setActiveTab('asv_table');
@@ -505,6 +695,35 @@ workflow_manager: "${pipelineConfig.workflowManager}"
     URL.revokeObjectURL(url);
   };
 
+  const renderEmptyTabNotice = (tabName: string, description: string) => (
+    <div className="bg-white rounded-3xl p-12 text-center border border-slate-200/90 shadow-2xs space-y-4 max-w-2xl mx-auto my-6">
+      <div className="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 mx-auto flex items-center justify-center shadow-inner">
+        <Dna className="w-8 h-8" />
+      </div>
+      <div>
+        <h3 className="text-lg font-bold text-slate-900">{tabName} — Awaiting Sequencing Data</h3>
+        <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
+          {description}
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center justify-center gap-3 pt-3">
+        <button
+          onClick={() => setIsUploadOpen(true)}
+          className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-xs transition-all active:scale-95"
+        >
+          <Upload className="w-4 h-4" />
+          <span>Upload FASTQ Reads</span>
+        </button>
+        <button
+          onClick={() => handleSelectDataset(GUT_MICROBIOME_DATASET)}
+          className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors"
+        >
+          Load Gut Microbiome Demo
+        </button>
+      </div>
+    </div>
+  );
+
   if (view === 'landing') {
     return (
       <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col font-sans selection:bg-blue-500 selection:text-white">
@@ -520,13 +739,13 @@ workflow_manager: "${pipelineConfig.workflowManager}"
                   MicrobiomeXpress
                 </span>
                 <span className="block text-[11px] font-medium text-slate-400">
-                  Enterprise ASV & OTU Pipeline Studio
+                  From FASTQ to Insights — in One Click. | One Dashboard. One Click. Complete Workflow.
                 </span>
               </div>
             </div>
             <div className="flex items-center gap-4">
               <button
-                onClick={() => setView('app')}
+                onClick={() => handleLaunchStudio()}
                 className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-lg shadow-blue-600/30 flex items-center gap-2 transition-all transform active:scale-95"
               >
                 <span>Launch Studio</span>
@@ -542,54 +761,89 @@ workflow_manager: "${pipelineConfig.workflowManager}"
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center">
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-semibold mb-6">
               <Sparkles className="w-3.5 h-3.5" />
-              <span>Accelerated 16S/ITS Amplicon Sequencing Workflow</span>
+              <span>From FASTQ to Insights — in One Click. | One Dashboard. One Click. Complete Workflow.</span>
             </div>
             <h1 className="text-4xl sm:text-6xl font-black tracking-tight text-white max-w-4xl mx-auto leading-tight">
-              Automated Microbiome ASV Pipelines, <br />
+              MicrobiomeXpress <br />
               <span className="bg-gradient-to-r from-blue-400 via-indigo-300 to-emerald-400 bg-clip-text text-transparent">
-                Simplified & Interactive
+                From FASTQ to Insights — in One Click.
               </span>
             </h1>
-            <p className="mt-6 text-lg sm:text-xl text-slate-400 max-w-2xl mx-auto leading-relaxed">
-              Seamlessly wrap FastQC, Cutadapt, DADA2 error inference, VSEARCH OTU clustering, and SILVA 138.1 taxonomy with real-time QC, phylogenetic trees, and alpha/beta diversity analytics.
+            <p className="mt-6 text-lg sm:text-xl text-slate-400 max-w-3xl mx-auto leading-relaxed">
+              <span className="text-slate-200 font-semibold">One Dashboard. One Click. Complete Workflow.</span> Automated microbiome amplicon sequencing pipeline wrapping FastQC, Cutadapt, DADA2 error inference, VSEARCH OTU clustering, and SILVA 138.1 taxonomy with interactive QC, taxonomy, and diversity analytics.
             </p>
             <div className="mt-10 flex flex-wrap justify-center gap-4">
               <button
-                onClick={() => setView('app')}
+                onClick={() => handleLaunchStudio()}
                 className="px-8 py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-sm shadow-xl shadow-blue-600/25 flex items-center gap-3 transition-all transform hover:-translate-y-0.5 active:translate-y-0"
               >
-                <Zap className="w-5 h-5" />
+                <Zap className="w-5 h-5 text-amber-300" />
                 <span>Launch Pipeline Studio</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
               <button
-                onClick={() => {
-                  handleSelectDataset(GUT_MICROBIOME_DATASET);
-                  setView('app');
-                }}
-                className="px-8 py-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-sm border border-slate-700 flex items-center gap-2 transition-all"
+                onClick={() => handleLaunchStudio(CLEAN_USER_DATASET, true)}
+                className="px-8 py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-sm shadow-xl shadow-emerald-600/25 flex items-center gap-3 transition-all transform hover:-translate-y-0.5 active:translate-y-0"
               >
-                <FolderArchive className="w-5 h-5 text-emerald-400" />
-                <span>Load Gut Microbiome Demo</span>
+                <Upload className="w-5 h-5" />
+                <span>Upload FASTQ / ZIP Archive</span>
+              </button>
+            </div>
+
+            {/* Quick Demo Pre-loads */}
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+              <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Quick Start Demos:</span>
+              <button
+                onClick={() => handleLaunchStudio(GUT_MICROBIOME_DATASET)}
+                className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700/80 flex items-center gap-1.5 transition-colors"
+              >
+                <FolderArchive className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Human Gut (Paired 16S)</span>
+              </button>
+              <button
+                onClick={() => handleLaunchStudio(SOIL_MICROBIOME_DATASET)}
+                className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700/80 flex items-center gap-1.5 transition-colors"
+              >
+                <FolderArchive className="w-3.5 h-3.5 text-amber-400" />
+                <span>Soil Rhizosphere (Paired 16S)</span>
+              </button>
+              <button
+                onClick={() => handleLaunchStudio(GUT_SINGLE_END_DATASET)}
+                className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700/80 flex items-center gap-1.5 transition-colors"
+              >
+                <FolderArchive className="w-3.5 h-3.5 text-blue-400" />
+                <span>Gut (Single-End 16S)</span>
               </button>
             </div>
 
             {/* Quick stats / metrics */}
-            <div className="mt-20 grid grid-cols-2 md:grid-cols-4 gap-6 max-w-5xl mx-auto pt-10 border-t border-slate-800/80">
-              <div className="p-4 rounded-2xl bg-slate-800/40 border border-slate-800">
-                <div className="text-2xl sm:text-3xl font-black text-blue-400">FastQC</div>
+            <div className="mt-16 grid grid-cols-2 md:grid-cols-4 gap-6 max-w-5xl mx-auto pt-10 border-t border-slate-800/80">
+              <div 
+                onClick={() => { handleLaunchStudio(); setActiveTab('qc'); }}
+                className="p-4 rounded-2xl bg-slate-800/40 border border-slate-800 hover:border-blue-500/50 cursor-pointer transition-all group"
+              >
+                <div className="text-2xl sm:text-3xl font-black text-blue-400 group-hover:scale-105 transition-transform">FastQC</div>
                 <div className="text-xs text-slate-400 mt-1">Raw Quality & Adapter Scan</div>
               </div>
-              <div className="p-4 rounded-2xl bg-slate-800/40 border border-slate-800">
-                <div className="text-2xl sm:text-3xl font-black text-indigo-400">DADA2</div>
+              <div 
+                onClick={() => { handleLaunchStudio(); setActiveTab('asv_table'); }}
+                className="p-4 rounded-2xl bg-slate-800/40 border border-slate-800 hover:border-indigo-500/50 cursor-pointer transition-all group"
+              >
+                <div className="text-2xl sm:text-3xl font-black text-indigo-400 group-hover:scale-105 transition-transform">DADA2</div>
                 <div className="text-xs text-slate-400 mt-1">Exact ASV Denoising</div>
               </div>
-              <div className="p-4 rounded-2xl bg-slate-800/40 border border-slate-800">
-                <div className="text-2xl sm:text-3xl font-black text-emerald-400">SILVA 138.1</div>
+              <div 
+                onClick={() => { handleLaunchStudio(); setActiveTab('taxa'); }}
+                className="p-4 rounded-2xl bg-slate-800/40 border border-slate-800 hover:border-emerald-500/50 cursor-pointer transition-all group"
+              >
+                <div className="text-2xl sm:text-3xl font-black text-emerald-400 group-hover:scale-105 transition-transform">SILVA 138.1</div>
                 <div className="text-xs text-slate-400 mt-1">High-Precision Taxonomy</div>
               </div>
-              <div className="p-4 rounded-2xl bg-slate-800/40 border border-slate-800">
-                <div className="text-2xl sm:text-3xl font-black text-purple-400">PCoA & PERMANOVA</div>
+              <div 
+                onClick={() => { handleLaunchStudio(); setActiveTab('diversity'); }}
+                className="p-4 rounded-2xl bg-slate-800/40 border border-slate-800 hover:border-purple-500/50 cursor-pointer transition-all group"
+              >
+                <div className="text-2xl sm:text-3xl font-black text-purple-400 group-hover:scale-105 transition-transform">PCoA & PERMANOVA</div>
                 <div className="text-xs text-slate-400 mt-1">Alpha & Beta Diversity</div>
               </div>
             </div>
@@ -607,7 +861,10 @@ workflow_manager: "${pipelineConfig.workflowManager}"
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              <div className="p-8 rounded-3xl bg-slate-900/80 border border-slate-800/80 flex flex-col justify-between hover:border-blue-500/50 transition-all group">
+              <div 
+                onClick={() => { handleLaunchStudio(); setActiveTab('qc'); }}
+                className="p-8 rounded-3xl bg-slate-900/80 border border-slate-800/80 flex flex-col justify-between hover:border-blue-500/50 transition-all group cursor-pointer"
+              >
                 <div>
                   <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
                     <BarChart3 className="w-6 h-6" />
@@ -617,13 +874,16 @@ workflow_manager: "${pipelineConfig.workflowManager}"
                     Inspect per-base sequence quality scores, GC content distributions, adapter contamination, and trim thresholds with interactive FastQC and Cutadapt metrics.
                   </p>
                 </div>
-                <div className="mt-8 pt-4 border-t border-slate-800 text-xs font-semibold text-blue-400 flex items-center gap-2">
-                  <span>Explore QC Inspector</span>
+                <div className="mt-8 pt-4 border-t border-slate-800 text-xs font-semibold text-blue-400 flex items-center gap-2 group-hover:translate-x-1 transition-transform">
+                  <span>Launch QC Inspector</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </div>
               </div>
 
-              <div className="p-8 rounded-3xl bg-slate-900/80 border border-slate-800/80 flex flex-col justify-between hover:border-indigo-500/50 transition-all group">
+              <div 
+                onClick={() => { handleLaunchStudio(); setActiveTab('asv_table'); }}
+                className="p-8 rounded-3xl bg-slate-900/80 border border-slate-800/80 flex flex-col justify-between hover:border-indigo-500/50 transition-all group cursor-pointer"
+              >
                 <div>
                   <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
                     <Workflow className="w-6 h-6" />
@@ -633,13 +893,16 @@ workflow_manager: "${pipelineConfig.workflowManager}"
                     Resolve exact Amplicon Sequence Variants (ASVs) via parametric error learning and chimera filtering, alongside 97% VSEARCH operational taxonomic unit clustering.
                   </p>
                 </div>
-                <div className="mt-8 pt-4 border-t border-slate-800 text-xs font-semibold text-indigo-400 flex items-center gap-2">
-                  <span>Explore Denoising Engine</span>
+                <div className="mt-8 pt-4 border-t border-slate-800 text-xs font-semibold text-indigo-400 flex items-center gap-2 group-hover:translate-x-1 transition-transform">
+                  <span>Launch Denoising Engine</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </div>
               </div>
 
-              <div className="p-8 rounded-3xl bg-slate-900/80 border border-slate-800/80 flex flex-col justify-between hover:border-emerald-500/50 transition-all group">
+              <div 
+                onClick={() => { handleLaunchStudio(); setActiveTab('diversity'); }}
+                className="p-8 rounded-3xl bg-slate-900/80 border border-slate-800/80 flex flex-col justify-between hover:border-emerald-500/50 transition-all group cursor-pointer"
+              >
                 <div>
                   <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
                     <Compass className="w-6 h-6" />
@@ -649,20 +912,27 @@ workflow_manager: "${pipelineConfig.workflowManager}"
                     Classify features against SILVA 138.1 database down to species level. Compute Shannon, Simpson, Chao1 alpha indices and Bray-Curtis beta diversity PCoA plots.
                   </p>
                 </div>
-                <div className="mt-8 pt-4 border-t border-slate-800 text-xs font-semibold text-emerald-400 flex items-center gap-2">
-                  <span>Explore Diversity Viewer</span>
+                <div className="mt-8 pt-4 border-t border-slate-800 text-xs font-semibold text-emerald-400 flex items-center gap-2 group-hover:translate-x-1 transition-transform">
+                  <span>Launch Diversity Viewer</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </div>
               </div>
             </div>
 
-            <div className="mt-16 text-center">
+            <div className="mt-16 text-center flex flex-wrap justify-center gap-4">
               <button
-                onClick={() => setView('app')}
-                className="px-8 py-4 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-emerald-600 hover:opacity-95 text-white font-extrabold text-sm shadow-2xl shadow-blue-600/30 inline-flex items-center gap-3 transition-all"
+                onClick={() => handleLaunchStudio()}
+                className="px-8 py-4 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-emerald-600 hover:opacity-95 text-white font-extrabold text-sm shadow-2xl shadow-blue-600/30 inline-flex items-center gap-3 transition-all transform hover:scale-105 active:scale-95"
               >
                 <span>Enter MicrobiomeXpress Studio Now</span>
                 <ArrowRight className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => handleLaunchStudio(CLEAN_USER_DATASET, true)}
+                className="px-8 py-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-sm border border-slate-700 inline-flex items-center gap-3 transition-all"
+              >
+                <Upload className="w-4 h-4 text-blue-400" />
+                <span>Upload Sample Archive (.zip / .fastq)</span>
               </button>
             </div>
           </div>
@@ -682,51 +952,106 @@ workflow_manager: "${pipelineConfig.workflowManager}"
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-              <div className="p-6 rounded-2xl bg-slate-950/60 border border-slate-800 relative">
-                <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black text-sm mb-4 shadow-lg shadow-blue-600/30">
+              <div 
+                onClick={() => handleLaunchStudio(CLEAN_USER_DATASET, true)}
+                className="p-6 rounded-2xl bg-slate-950/60 border border-slate-800 hover:border-blue-500/50 cursor-pointer transition-all group relative"
+              >
+                <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black text-sm mb-4 shadow-lg shadow-blue-600/30 group-hover:scale-110 transition-transform">
                   01
                 </div>
                 <h3 className="text-base font-bold text-white mb-2">Upload FASTQ & Manifest</h3>
-                <p className="text-xs text-slate-400 leading-relaxed">
+                <p className="text-xs text-slate-400 leading-relaxed mb-4">
                   Click <strong>Uploads</strong> in the studio to upload raw paired-end or single-end FASTQ reads and define your sample group metadata manifest.
                 </p>
+                <span className="text-[11px] font-bold text-blue-400 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                  <span>Launch Uploads Modal</span>
+                  <ArrowRight className="w-3 h-3" />
+                </span>
               </div>
 
-              <div className="p-6 rounded-2xl bg-slate-950/60 border border-slate-800 relative">
-                <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-black text-sm mb-4 shadow-lg shadow-indigo-600/30">
+              <div 
+                onClick={() => { handleLaunchStudio(); setIsConfigOpen(true); }}
+                className="p-6 rounded-2xl bg-slate-950/60 border border-slate-800 hover:border-indigo-500/50 cursor-pointer transition-all group relative"
+              >
+                <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-black text-sm mb-4 shadow-lg shadow-indigo-600/30 group-hover:scale-110 transition-transform">
                   02
                 </div>
                 <h3 className="text-base font-bold text-white mb-2">Configure Parameters</h3>
-                <p className="text-xs text-slate-400 leading-relaxed">
+                <p className="text-xs text-slate-400 leading-relaxed mb-4">
                   Click <strong>Parameters</strong> to fine-tune Phred quality cutoffs, primer sequences (515F/806R), DADA2 error learning, and SILVA taxonomy.
                 </p>
+                <span className="text-[11px] font-bold text-indigo-400 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                  <span>Open Config Panel</span>
+                  <ArrowRight className="w-3 h-3" />
+                </span>
               </div>
 
-              <div className="p-6 rounded-2xl bg-slate-950/60 border border-slate-800 relative">
-                <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black text-sm mb-4 shadow-lg shadow-emerald-600/30">
+              <div 
+                onClick={() => { handleLaunchStudio(); handleRunPipeline(); }}
+                className="p-6 rounded-2xl bg-slate-950/60 border border-slate-800 hover:border-emerald-500/50 cursor-pointer transition-all group relative"
+              >
+                <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black text-sm mb-4 shadow-lg shadow-emerald-600/30 group-hover:scale-110 transition-transform">
                   03
                 </div>
                 <h3 className="text-base font-bold text-white mb-2">Run Automated Pipeline</h3>
-                <p className="text-xs text-slate-400 leading-relaxed">
+                <p className="text-xs text-slate-400 leading-relaxed mb-4">
                   Click <strong>Run Pipeline Now</strong> to process reads through FastQC, Cutadapt, DADA2 denoising, removeBimera, and VSEARCH OTU clustering.
                 </p>
+                <span className="text-[11px] font-bold text-emerald-400 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                  <span>Start Pipeline Execution</span>
+                  <ArrowRight className="w-3 h-3" />
+                </span>
               </div>
 
-              <div className="p-6 rounded-2xl bg-slate-950/60 border border-slate-800 relative">
-                <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center font-black text-sm mb-4 shadow-lg shadow-purple-600/30">
+              <div 
+                onClick={() => { handleLaunchStudio(); setActiveTab('overview'); }}
+                className="p-6 rounded-2xl bg-slate-950/60 border border-slate-800 hover:border-purple-500/50 cursor-pointer transition-all group relative"
+              >
+                <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center font-black text-sm mb-4 shadow-lg shadow-purple-600/30 group-hover:scale-110 transition-transform">
                   04
                 </div>
                 <h3 className="text-base font-bold text-white mb-2">Analyze & Export Reports</h3>
-                <p className="text-xs text-slate-400 leading-relaxed">
+                <p className="text-xs text-slate-400 leading-relaxed mb-4">
                   Explore interactive PCoA plots, generate publication-grade HTML reports, and export Python/R scripts from the Code Hub.
                 </p>
+                <span className="text-[11px] font-bold text-purple-400 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                  <span>Open Studio Dashboard</span>
+                  <ArrowRight className="w-3 h-3" />
+                </span>
               </div>
             </div>
           </div>
         </section>
 
         {/* Footer */}
-        <footer className="mt-auto border-t border-slate-800 py-8 bg-slate-950 text-center text-xs text-slate-500">
+        <footer className="mt-auto border-t border-slate-800 py-8 bg-slate-950 text-center text-xs text-slate-500 flex flex-col items-center justify-center gap-4">
+          <div className="flex flex-wrap items-center justify-center gap-4">
+            <button 
+              onClick={() => handleLaunchStudio()}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-xs transition-colors flex items-center gap-2"
+            >
+              <span>Launch Studio</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+            <button 
+              onClick={() => handleLaunchStudio(GUT_MICROBIOME_DATASET)}
+              className="text-slate-400 hover:text-white transition-colors"
+            >
+              Gut Microbiome Demo
+            </button>
+            <button 
+              onClick={() => handleLaunchStudio(SOIL_MICROBIOME_DATASET)}
+              className="text-slate-400 hover:text-white transition-colors"
+            >
+              Soil Microbiome Demo
+            </button>
+            <button 
+              onClick={() => handleLaunchStudio(CLEAN_USER_DATASET, true)}
+              className="text-slate-400 hover:text-white transition-colors"
+            >
+              Upload FASTQ Reads
+            </button>
+          </div>
           <p>MicrobiomeXpress Studio • Automated ASV Pipeline & Multi-Omics Analytics Suite</p>
         </footer>
       </div>
@@ -746,7 +1071,11 @@ workflow_manager: "${pipelineConfig.workflowManager}"
         onOpenCodeHub={() => setIsCodeHubOpen(true)}
         onOpenReport={() => setIsReportOpen(true)}
         onDownloadAsset={handleDownloadAsset}
+        recentRuns={recentRuns}
+        onSelectRunId={handleSelectRunId}
+        onDeleteRun={handleDeleteRun}
         onReturnToLanding={() => setView('landing')}
+        onStartTour={() => setIsTourOpen(true)}
       />
 
       {/* Pipeline Stepper & Live Execution Status */}
@@ -758,6 +1087,7 @@ workflow_manager: "${pipelineConfig.workflowManager}"
         onSelectStage={(id) => setActiveStageId(id)}
         config={pipelineConfig}
         batchJobState={batchJobState}
+        datasetName={currentDataset.datasetName}
       />
 
       {/* Staged Manifest Notification Banner */}
@@ -802,7 +1132,7 @@ workflow_manager: "${pipelineConfig.workflowManager}"
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         {/* Navigation Tabs Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-2 rounded-2xl border border-slate-200 shadow-2xs">
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-2 rounded-2xl border border-slate-200 shadow-2xs" id="tour-tabs-bar">
           <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold">
             <button
               onClick={() => setActiveTab('overview')}
@@ -931,6 +1261,38 @@ workflow_manager: "${pipelineConfig.workflowManager}"
         {/* Tab 1: Overview Summary Dashboard */}
         {activeTab === 'overview' && (
           <div className="space-y-6">
+            {/* Real Workspace Active Banner if zero samples */}
+            {currentDataset.samples.length === 0 && (
+              <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-950 text-white rounded-3xl p-6 sm:p-8 shadow-xl border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                <div className="space-y-2 max-w-2xl">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 text-blue-300 text-xs font-semibold border border-blue-400/30">
+                    <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+                    <span>From FASTQ to Insights — in One Click.</span>
+                  </div>
+                  <h2 className="text-xl sm:text-2xl font-black tracking-tight">Your Real Workspace is Active & Clean</h2>
+                  <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                    One Dashboard. One Click. Complete Workflow. Sample dummy data has been cleared. Upload your raw FASTQ reads and experimental metadata manifest to execute your automated pipeline.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-3 shrink-0">
+                  <button
+                    onClick={() => setIsUploadOpen(true)}
+                    className="px-5 py-3 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-lg shadow-blue-600/30 flex items-center gap-2 transition-all transform active:scale-95"
+                  >
+                    <Upload className="w-4 h-4" />
+                    <span>Upload FASTQ Reads</span>
+                  </button>
+                  <button
+                    onClick={() => handleSelectDataset(GUT_MICROBIOME_DATASET)}
+                    className="px-4 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs border border-slate-700 flex items-center gap-2 transition-all"
+                  >
+                    <FolderArchive className="w-4 h-4 text-emerald-400" />
+                    <span>Load Sample Demo Data</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Quick Summary Cards Banner */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
               <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-2xs">
@@ -952,7 +1314,9 @@ workflow_manager: "${pipelineConfig.workflowManager}"
                   <ShieldCheck className="w-4 h-4 text-emerald-600" />
                 </div>
                 <div className="text-2xl font-bold text-emerald-600 font-mono">
-                  {((currentDataset.qc.totalCleanReads / currentDataset.qc.totalRawReads) * 100).toFixed(1)}%
+                  {currentDataset.qc.totalRawReads > 0
+                    ? `${((currentDataset.qc.totalCleanReads / currentDataset.qc.totalRawReads) * 100).toFixed(1)}%`
+                    : '0%'}
                 </div>
                 <div className="text-xs text-slate-500 mt-1">
                   {currentDataset.qc.totalCleanReads.toLocaleString()} non-chimeric reads
@@ -991,10 +1355,10 @@ workflow_manager: "${pipelineConfig.workflowManager}"
                   <Compass className="w-4 h-4 text-indigo-600" />
                 </div>
                 <div className="text-2xl font-bold text-slate-900 font-mono">
-                  {currentDataset.diversity.varianceExplained[0]}% <span className="text-xs text-slate-400 font-sans font-normal">PC1</span>
+                  {currentDataset.diversity.varianceExplained[0] || 0}% <span className="text-xs text-slate-400 font-sans font-normal">PC1</span>
                 </div>
                 <div className="text-xs text-slate-500 mt-1">
-                  PERMANOVA p = 0.002
+                  {currentDataset.samples.length > 0 ? 'PERMANOVA p = 0.002' : 'Awaiting samples'}
                 </div>
               </div>
             </div>
@@ -1014,10 +1378,17 @@ workflow_manager: "${pipelineConfig.workflowManager}"
                         <p className="text-xs text-slate-500">Active run: <span className="font-mono text-slate-700">{currentDataset.runId}</span></p>
                       </div>
                     </div>
-                    <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold border border-emerald-200 flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                      Completed Successfully
-                    </span>
+                    {currentDataset.samples.length === 0 ? (
+                      <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-semibold border border-blue-200 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-blue-500" />
+                        Awaiting Sequencing Reads
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-semibold border border-emerald-200 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        Completed Successfully
+                      </span>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
@@ -1036,12 +1407,12 @@ workflow_manager: "${pipelineConfig.workflowManager}"
                   </div>
 
                   <div className="pt-2 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
-                    <span>Use the navigation tabs above to explore detailed FastQC reports, Taxa Bar Plots, Alpha/Beta Diversity, and ASV/OTU matrices.</span>
+                    <span>From FASTQ to Insights — in One Click. | One Dashboard. One Click. Complete Workflow.</span>
                     <button
-                      onClick={() => setActiveTab('taxa')}
+                      onClick={() => setIsUploadOpen(true)}
                       className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-all shadow-xs flex items-center gap-1.5"
                     >
-                      <span>Explore Detailed Analysis</span>
+                      <span>Upload & Configure Manifest</span>
                       <ArrowRight className="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -1061,10 +1432,6 @@ workflow_manager: "${pipelineConfig.workflowManager}"
                   <p className="text-xs text-slate-300 leading-relaxed">
                     Switch between <strong>ASVs (100%)</strong> and <strong>OTUs (97%)</strong> resolution anytime using the header toggle to compare exact variant precision against clustered operational taxonomic units.
                   </p>
-                  <div className="pt-2 border-t border-indigo-900/50 flex items-center justify-between text-[11px] text-slate-400 font-mono">
-                    <span>Active Storage</span>
-                    <span className="text-emerald-400">{pipelineConfig.cloudBucketUri}</span>
-                  </div>
                 </div>
               </div>
             </div>
@@ -1073,44 +1440,56 @@ workflow_manager: "${pipelineConfig.workflowManager}"
 
         {/* Tab 2: FastQC Quality Control */}
         {activeTab === 'qc' && (
-          <QcViewer qc={currentDataset.qc} samples={currentDataset.samples} />
+          (currentDataset.samples.length === 0 || currentDataset.qc.rawQuality.length === 0)
+            ? renderEmptyTabNotice('FastQC Quality Reports', 'Upload your raw FASTQ reads and run the pipeline to inspect per-base Phred scores and adapter distributions.')
+            : <QcViewer qc={currentDataset.qc} samples={currentDataset.samples} />
         )}
 
         {/* Tab 3: Taxa Bar Plots */}
         {activeTab === 'taxa' && (
-          <TaxaBarPlot
-            asvs={featureMode === 'OTU' ? currentDataset.otus as any : currentDataset.asvs}
-            samples={currentDataset.samples}
-          />
+          (currentDataset.samples.length === 0 || currentDataset.asvs.length === 0)
+            ? renderEmptyTabNotice('Taxa Relative Abundance', 'Upload your raw FASTQ reads and run the pipeline to generate interactive taxonomic stacked bar charts.')
+            : <TaxaBarPlot
+                asvs={featureMode === 'OTU' ? currentDataset.otus as any : currentDataset.asvs}
+                samples={currentDataset.samples}
+              />
         )}
 
         {/* Tab 4: Diversity Analysis */}
         {activeTab === 'diversity' && (
-          <DiversityViewer
-            diversity={featureMode === 'OTU' ? currentDataset.otuDiversity : currentDataset.diversity}
-            samples={currentDataset.samples}
-          />
+          (currentDataset.samples.length === 0 || currentDataset.diversity.alpha.length === 0)
+            ? renderEmptyTabNotice('Alpha & Beta Diversity Analytics', 'Upload your raw FASTQ reads and run the pipeline to calculate richness and ordination across groups.')
+            : <DiversityViewer
+                diversity={featureMode === 'OTU' ? currentDataset.otuDiversity : currentDataset.diversity}
+                samples={currentDataset.samples}
+              />
         )}
 
         {/* Tab 5: Feature Table (ASV & OTU) */}
         {activeTab === 'asv_table' && (
-          <AsvTableViewer
-            asvs={currentDataset.asvs}
-            otus={currentDataset.otus}
-            samples={currentDataset.samples}
-            activeMode={featureMode}
-            onChangeMode={(m) => setFeatureMode(m)}
-            onDownloadTsv={(m) => handleDownloadAsset(m === 'OTU' ? 'otu_tsv' : 'asv_tsv')}
-            onDownloadBiom={(m) => handleDownloadAsset(m === 'OTU' ? 'otu_biom' : 'asv_biom')}
-            onDownloadFasta={(m) => handleDownloadAsset(m === 'OTU' ? 'otu_fasta' : 'fasta')}
-            onDownloadMap={() => handleDownloadAsset('asv_otu_map')}
-          />
+          (currentDataset.samples.length === 0 || currentDataset.asvs.length === 0)
+            ? renderEmptyTabNotice('ASV & OTU Feature Matrix', 'Upload your raw FASTQ reads and run the pipeline to resolve exact biological features.')
+            : <AsvTableViewer
+                asvs={currentDataset.asvs}
+                otus={currentDataset.otus}
+                samples={currentDataset.samples}
+                activeMode={featureMode}
+                onChangeMode={(m) => setFeatureMode(m)}
+                onDownloadTsv={(m) => handleDownloadAsset(m === 'OTU' ? 'otu_tsv' : 'asv_tsv')}
+                onDownloadBiom={(m) => handleDownloadAsset(m === 'OTU' ? 'otu_biom' : 'asv_biom')}
+                onDownloadFasta={(m) => handleDownloadAsset(m === 'OTU' ? 'otu_fasta' : 'fasta')}
+                onDownloadMap={() => handleDownloadAsset('asv_otu_map')}
+              />
         )}
 
         {/* Tab 6: Batch History */}
-        {activeTab === 'history' && <BatchHistoryTab />}
+        {activeTab === 'history' && <BatchHistoryTab onSelectRunId={handleSelectRunId} onDeleteRun={handleDeleteRun} runs={recentRuns} />}
         {/* Tab 7: Phylogeny */}
-        {activeTab === 'phylogeny' && <PhylogeneticTree asvs={currentDataset.asvs} />}
+        {activeTab === 'phylogeny' && (
+          (currentDataset.samples.length === 0 || currentDataset.asvs.length === 0)
+            ? renderEmptyTabNotice('Phylogenetic Tree Alignment', 'Upload your raw FASTQ reads and run the pipeline to generate phylogenetic trees.')
+            : <PhylogeneticTree asvs={currentDataset.asvs} />
+        )}
       </main>
 
       {/* Modals */}
@@ -1126,89 +1505,28 @@ workflow_manager: "${pipelineConfig.workflowManager}"
         onClose={() => setIsUploadOpen(false)}
         samples={currentDataset.samples}
         sequencingType={pipelineConfig.sequencingType}
-        onUpdateSamples={(newSamples, newType, newMode) => {
+        onUpdateSamples={(newSamples, newType, newMode, datasetName) => {
           const updatedType = newType || pipelineConfig.sequencingType;
           const updatedMode = newMode || pipelineConfig.executionMode;
+          const updatedConfig: PipelineConfig = {
+            ...pipelineConfig,
+            sequencingType: updatedType,
+            executionMode: updatedMode,
+          };
           if (newType || newMode) {
-            setPipelineConfig({ 
-              ...pipelineConfig, 
-              sequencingType: updatedType,
-              executionMode: updatedMode,
-            });
+            setPipelineConfig(updatedConfig);
           }
 
-          const updatedAsvs = currentDataset.asvs.map(asv => {
-            const newCounts: Record<string, number> = {};
-            const oldKeys = Object.keys(asv.sampleCounts);
-            newSamples.forEach((s, idx) => {
-              const countVal = asv.sampleCounts[s.id] ?? asv.sampleCounts[oldKeys[idx % Math.max(1, oldKeys.length)]] ?? 1000;
-              newCounts[s.id] = countVal;
-            });
-            return { ...asv, sampleCounts: newCounts };
-          });
+          const dsTitle = datasetName || `${newSamples.length} Uploaded FASTQ Samples`;
+          const populatedDataset = buildPipelineResultsForSamples(
+            newSamples,
+            updatedConfig,
+            `RUN-${Date.now().toString().slice(-6)}`,
+            dsTitle
+          );
 
-          const updatedOtus = currentDataset.otus.map(otu => {
-            const newCounts: Record<string, number> = {};
-            const oldKeys = Object.keys(otu.sampleCounts);
-            newSamples.forEach((s, idx) => {
-              const countVal = otu.sampleCounts[s.id] ?? otu.sampleCounts[oldKeys[idx % Math.max(1, oldKeys.length)]] ?? 800;
-              newCounts[s.id] = countVal;
-            });
-            return { ...otu, sampleCounts: newCounts };
-          });
-
-          const updatedDiversity = {
-            ...currentDataset.diversity,
-            alpha: newSamples.map((s, idx) => {
-              const oldItem = currentDataset.diversity.alpha[idx % currentDataset.diversity.alpha.length] || currentDataset.diversity.alpha[0];
-              return {
-                ...oldItem,
-                sampleId: s.id,
-                sampleName: s.name,
-                group: s.group,
-              };
-            }),
-            beta: newSamples.map((s, idx) => {
-              const oldItem = currentDataset.diversity.beta[idx % currentDataset.diversity.beta.length] || currentDataset.diversity.beta[0];
-              return {
-                ...oldItem,
-                sampleId: s.id,
-                sampleName: s.name,
-                group: s.group,
-              };
-            }),
-          };
-
-          const updatedOtuDiversity = {
-            ...currentDataset.otuDiversity,
-            alpha: newSamples.map((s, idx) => {
-              const oldItem = currentDataset.otuDiversity.alpha[idx % currentDataset.otuDiversity.alpha.length] || currentDataset.otuDiversity.alpha[0];
-              return {
-                ...oldItem,
-                sampleId: s.id,
-                sampleName: s.name,
-                group: s.group,
-              };
-            }),
-            beta: newSamples.map((s, idx) => {
-              const oldItem = currentDataset.otuDiversity.beta[idx % currentDataset.otuDiversity.beta.length] || currentDataset.otuDiversity.beta[0];
-              return {
-                ...oldItem,
-                sampleId: s.id,
-                sampleName: s.name,
-                group: s.group,
-              };
-            }),
-          };
-
-          setCurrentDataset({ 
-            ...currentDataset, 
-            samples: newSamples,
-            asvs: updatedAsvs,
-            otus: updatedOtus,
-            diversity: updatedDiversity,
-            otuDiversity: updatedOtuDiversity,
-          });
+          setCurrentDataset(populatedDataset);
+          setStages(INITIAL_STAGES);
 
           setStagedNotification({
             count: newSamples.length,
@@ -1217,50 +1535,34 @@ workflow_manager: "${pipelineConfig.workflowManager}"
 
           if (pipelineConfig.autoRunOnUpload) {
             setTimeout(() => {
-              handleRunPipeline();
+              handleRunPipeline(newSamples, dsTitle);
             }, 500);
           }
         }}
-        onSaveAndRun={(newSamples, newType, newMode) => {
+        onSaveAndRun={(newSamples, newType, newMode, datasetName) => {
           const updatedType = newType || pipelineConfig.sequencingType;
           const updatedMode = newMode || pipelineConfig.executionMode;
+          const updatedConfig: PipelineConfig = {
+            ...pipelineConfig,
+            sequencingType: updatedType,
+            executionMode: updatedMode,
+          };
           if (newType || newMode) {
-            setPipelineConfig({ 
-              ...pipelineConfig, 
-              sequencingType: updatedType,
-              executionMode: updatedMode,
-            });
+            setPipelineConfig(updatedConfig);
           }
 
-          const updatedAsvs = currentDataset.asvs.map(asv => {
-            const newCounts: Record<string, number> = {};
-            const oldKeys = Object.keys(asv.sampleCounts);
-            newSamples.forEach((s, idx) => {
-              const countVal = asv.sampleCounts[s.id] ?? asv.sampleCounts[oldKeys[idx % Math.max(1, oldKeys.length)]] ?? 1000;
-              newCounts[s.id] = countVal;
-            });
-            return { ...asv, sampleCounts: newCounts };
-          });
+          const dsTitle = datasetName || `${newSamples.length} Uploaded FASTQ Samples`;
+          const populatedDataset = buildPipelineResultsForSamples(
+            newSamples,
+            updatedConfig,
+            `RUN-${Date.now().toString().slice(-6)}`,
+            dsTitle
+          );
 
-          const updatedOtus = currentDataset.otus.map(otu => {
-            const newCounts: Record<string, number> = {};
-            const oldKeys = Object.keys(otu.sampleCounts);
-            newSamples.forEach((s, idx) => {
-              const countVal = otu.sampleCounts[s.id] ?? otu.sampleCounts[oldKeys[idx % Math.max(1, oldKeys.length)]] ?? 800;
-              newCounts[s.id] = countVal;
-            });
-            return { ...otu, sampleCounts: newCounts };
-          });
-
-          setCurrentDataset({ 
-            ...currentDataset, 
-            samples: newSamples,
-            asvs: updatedAsvs,
-            otus: updatedOtus,
-          });
+          setCurrentDataset(populatedDataset);
 
           setTimeout(() => {
-            handleRunPipeline();
+            handleRunPipeline(newSamples, dsTitle);
           }, 150);
         }}
         onLoadMockFiles={() => {
@@ -1280,6 +1582,11 @@ workflow_manager: "${pipelineConfig.workflowManager}"
       <CodeHubModal
         isOpen={isCodeHubOpen}
         onClose={() => setIsCodeHubOpen(false)}
+      />
+
+      <InteractiveTour
+        isOpen={isTourOpen}
+        onClose={() => setIsTourOpen(false)}
       />
     </div>
   );
