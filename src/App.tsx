@@ -152,6 +152,7 @@ export default function App() {
   const [activeStageId, setActiveStageId] = useState<string>('otu_clustering');
   const [activeTab, setActiveTab] = useState<'overview' | 'qc' | 'taxa' | 'diversity' | 'asv_table' | 'history' | 'phylogeny'>('overview');
   const [featureMode, setFeatureMode] = useState<'ASV' | 'OTU'>('ASV');
+  const [view, setView] = useState<'landing' | 'app'>('landing');
 
   // Modals
   const [isConfigOpen, setIsConfigOpen] = useState(false);
@@ -504,6 +505,177 @@ workflow_manager: "${pipelineConfig.workflowManager}"
     URL.revokeObjectURL(url);
   };
 
+  if (view === 'landing') {
+    return (
+      <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col font-sans selection:bg-blue-500 selection:text-white">
+        {/* Landing Navigation */}
+        <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur-md sticky top-0 z-50">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-500 via-indigo-600 to-emerald-500 flex items-center justify-center text-white shadow-lg shadow-blue-500/20">
+                <Dna className="w-6 h-6 animate-pulse" />
+              </div>
+              <div>
+                <span className="text-lg font-black tracking-tight bg-gradient-to-r from-blue-400 via-indigo-300 to-emerald-400 bg-clip-text text-transparent">
+                  MicrobiomeXpress
+                </span>
+                <span className="block text-[11px] font-medium text-slate-400">
+                  Enterprise ASV & OTU Pipeline Studio
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setView('app')}
+                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-lg shadow-blue-600/30 flex items-center gap-2 transition-all transform active:scale-95"
+              >
+                <span>Launch Studio</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* Hero Section */}
+        <section className="relative overflow-hidden py-20 lg:py-28 bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950">
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-900/20 via-transparent to-transparent pointer-events-none" />
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-semibold mb-6">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Accelerated 16S/ITS Amplicon Sequencing Workflow</span>
+            </div>
+            <h1 className="text-4xl sm:text-6xl font-black tracking-tight text-white max-w-4xl mx-auto leading-tight">
+              Automated Microbiome ASV Pipelines, <br />
+              <span className="bg-gradient-to-r from-blue-400 via-indigo-300 to-emerald-400 bg-clip-text text-transparent">
+                Simplified & Interactive
+              </span>
+            </h1>
+            <p className="mt-6 text-lg sm:text-xl text-slate-400 max-w-2xl mx-auto leading-relaxed">
+              Seamlessly wrap FastQC, Cutadapt, DADA2 error inference, VSEARCH OTU clustering, and SILVA 138.1 taxonomy with real-time QC, phylogenetic trees, and alpha/beta diversity analytics.
+            </p>
+            <div className="mt-10 flex flex-wrap justify-center gap-4">
+              <button
+                onClick={() => setView('app')}
+                className="px-8 py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-sm shadow-xl shadow-blue-600/25 flex items-center gap-3 transition-all transform hover:-translate-y-0.5 active:translate-y-0"
+              >
+                <Zap className="w-5 h-5" />
+                <span>Launch Pipeline Studio</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => {
+                  handleSelectDataset(GUT_MICROBIOME_DATASET);
+                  setView('app');
+                }}
+                className="px-8 py-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-sm border border-slate-700 flex items-center gap-2 transition-all"
+              >
+                <FolderArchive className="w-5 h-5 text-emerald-400" />
+                <span>Load Gut Microbiome Demo</span>
+              </button>
+            </div>
+
+            {/* Quick stats / metrics */}
+            <div className="mt-20 grid grid-cols-2 md:grid-cols-4 gap-6 max-w-5xl mx-auto pt-10 border-t border-slate-800/80">
+              <div className="p-4 rounded-2xl bg-slate-800/40 border border-slate-800">
+                <div className="text-2xl sm:text-3xl font-black text-blue-400">FastQC</div>
+                <div className="text-xs text-slate-400 mt-1">Raw Quality & Adapter Scan</div>
+              </div>
+              <div className="p-4 rounded-2xl bg-slate-800/40 border border-slate-800">
+                <div className="text-2xl sm:text-3xl font-black text-indigo-400">DADA2</div>
+                <div className="text-xs text-slate-400 mt-1">Exact ASV Denoising</div>
+              </div>
+              <div className="p-4 rounded-2xl bg-slate-800/40 border border-slate-800">
+                <div className="text-2xl sm:text-3xl font-black text-emerald-400">SILVA 138.1</div>
+                <div className="text-xs text-slate-400 mt-1">High-Precision Taxonomy</div>
+              </div>
+              <div className="p-4 rounded-2xl bg-slate-800/40 border border-slate-800">
+                <div className="text-2xl sm:text-3xl font-black text-purple-400">PCoA & PERMANOVA</div>
+                <div className="text-xs text-slate-400 mt-1">Alpha & Beta Diversity</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Feature Highlights Grid */}
+        <section className="py-20 bg-slate-950">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center max-w-3xl mx-auto mb-16">
+              <h2 className="text-3xl font-black text-white">Complete End-to-End Microbiome Suite</h2>
+              <p className="mt-3 text-slate-400 text-sm">
+                Designed for computational biologists, microbiologists, and clinical researchers requiring publication-grade reproducibility and interactive visualization.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              <div className="p-8 rounded-3xl bg-slate-900/80 border border-slate-800/80 flex flex-col justify-between hover:border-blue-500/50 transition-all group">
+                <div>
+                  <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                    <BarChart3 className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-lg font-bold text-white mb-2">Interactive Quality Control</h3>
+                  <p className="text-sm text-slate-400 leading-relaxed">
+                    Inspect per-base sequence quality scores, GC content distributions, adapter contamination, and trim thresholds with interactive FastQC and Cutadapt metrics.
+                  </p>
+                </div>
+                <div className="mt-8 pt-4 border-t border-slate-800 text-xs font-semibold text-blue-400 flex items-center gap-2">
+                  <span>Explore QC Inspector</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </div>
+              </div>
+
+              <div className="p-8 rounded-3xl bg-slate-900/80 border border-slate-800/80 flex flex-col justify-between hover:border-indigo-500/50 transition-all group">
+                <div>
+                  <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                    <Workflow className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-lg font-bold text-white mb-2">DADA2 & OTU Clustering</h3>
+                  <p className="text-sm text-slate-400 leading-relaxed">
+                    Resolve exact Amplicon Sequence Variants (ASVs) via parametric error learning and chimera filtering, alongside 97% VSEARCH operational taxonomic unit clustering.
+                  </p>
+                </div>
+                <div className="mt-8 pt-4 border-t border-slate-800 text-xs font-semibold text-indigo-400 flex items-center gap-2">
+                  <span>Explore Denoising Engine</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </div>
+              </div>
+
+              <div className="p-8 rounded-3xl bg-slate-900/80 border border-slate-800/80 flex flex-col justify-between hover:border-emerald-500/50 transition-all group">
+                <div>
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                    <Compass className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-lg font-bold text-white mb-2">Taxonomy & Diversity Analytics</h3>
+                  <p className="text-sm text-slate-400 leading-relaxed">
+                    Classify features against SILVA 138.1 database down to species level. Compute Shannon, Simpson, Chao1 alpha indices and Bray-Curtis beta diversity PCoA plots.
+                  </p>
+                </div>
+                <div className="mt-8 pt-4 border-t border-slate-800 text-xs font-semibold text-emerald-400 flex items-center gap-2">
+                  <span>Explore Diversity Viewer</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-16 text-center">
+              <button
+                onClick={() => setView('app')}
+                className="px-8 py-4 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-emerald-600 hover:opacity-95 text-white font-extrabold text-sm shadow-2xl shadow-blue-600/30 inline-flex items-center gap-3 transition-all"
+              >
+                <span>Enter MicrobiomeXpress Studio Now</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* Footer */}
+        <footer className="mt-auto border-t border-slate-800 py-8 bg-slate-950 text-center text-xs text-slate-500">
+          <p>MicrobiomeXpress Studio • Automated ASV Pipeline & Multi-Omics Analytics Suite</p>
+        </footer>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-100/70 text-slate-900 flex flex-col font-sans">
       {/* Top Navbar */}
@@ -517,6 +689,7 @@ workflow_manager: "${pipelineConfig.workflowManager}"
         onOpenCodeHub={() => setIsCodeHubOpen(true)}
         onOpenReport={() => setIsReportOpen(true)}
         onDownloadAsset={handleDownloadAsset}
+        onReturnToLanding={() => setView('landing')}
       />
 
       {/* Pipeline Stepper & Live Execution Status */}

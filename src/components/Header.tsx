@@ -25,6 +25,7 @@ interface HeaderProps {
   onOpenCodeHub: () => void;
   onOpenReport: () => void;
   onDownloadAsset: (assetType: 'asv_tsv' | 'asv_biom' | 'fasta' | 'otu_tsv' | 'otu_biom' | 'otu_fasta' | 'asv_otu_map' | 'params' | 'html_report') => void;
+  onReturnToLanding?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -37,6 +38,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenCodeHub,
   onOpenReport,
   onDownloadAsset,
+  onReturnToLanding,
 }) => {
   const [downloadOpen, setDownloadOpen] = useState(false);
 
@@ -45,7 +47,11 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo and Title */}
-          <div className="flex items-center space-x-3">
+          <div 
+            className="flex items-center space-x-3 cursor-pointer group"
+            onClick={onReturnToLanding}
+            title="Return to Landing Page & Overview"
+          >
             <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-teal-500 flex items-center justify-center text-white shadow-lg ring-2 ring-blue-50">
               <Dna className="w-7 h-7" />
             </div>
