@@ -1,0 +1,9 @@
+node_modules
+dist
+.git
+.gitignore
+.aistudio
+.env*
+README.md
+Dockerfile
+.dockerignore
