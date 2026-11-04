@@ -668,6 +668,63 @@ workflow_manager: "${pipelineConfig.workflowManager}"
           </div>
         </section>
 
+        {/* 4-Step Workflow Section */}
+        <section className="py-20 bg-slate-900 border-t border-slate-800">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center max-w-3xl mx-auto mb-16">
+              <span className="text-xs font-bold uppercase tracking-widest text-blue-400 bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20">
+                Step-by-Step Guide
+              </span>
+              <h2 className="text-3xl font-black text-white mt-4">How to Process Real Data in 4 Simple Steps</h2>
+              <p className="mt-3 text-slate-400 text-sm">
+                Transition seamlessly from sample dataset demos to your own high-throughput amplicon sequencing runs.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              <div className="p-6 rounded-2xl bg-slate-950/60 border border-slate-800 relative">
+                <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black text-sm mb-4 shadow-lg shadow-blue-600/30">
+                  01
+                </div>
+                <h3 className="text-base font-bold text-white mb-2">Upload FASTQ & Manifest</h3>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Click <strong>Uploads</strong> in the studio to upload raw paired-end or single-end FASTQ reads and define your sample group metadata manifest.
+                </p>
+              </div>
+
+              <div className="p-6 rounded-2xl bg-slate-950/60 border border-slate-800 relative">
+                <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-black text-sm mb-4 shadow-lg shadow-indigo-600/30">
+                  02
+                </div>
+                <h3 className="text-base font-bold text-white mb-2">Configure Parameters</h3>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Click <strong>Parameters</strong> to fine-tune Phred quality cutoffs, primer sequences (515F/806R), DADA2 error learning, and SILVA taxonomy.
+                </p>
+              </div>
+
+              <div className="p-6 rounded-2xl bg-slate-950/60 border border-slate-800 relative">
+                <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black text-sm mb-4 shadow-lg shadow-emerald-600/30">
+                  03
+                </div>
+                <h3 className="text-base font-bold text-white mb-2">Run Automated Pipeline</h3>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Click <strong>Run Pipeline Now</strong> to process reads through FastQC, Cutadapt, DADA2 denoising, removeBimera, and VSEARCH OTU clustering.
+                </p>
+              </div>
+
+              <div className="p-6 rounded-2xl bg-slate-950/60 border border-slate-800 relative">
+                <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center font-black text-sm mb-4 shadow-lg shadow-purple-600/30">
+                  04
+                </div>
+                <h3 className="text-base font-bold text-white mb-2">Analyze & Export Reports</h3>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Explore interactive PCoA plots, generate publication-grade HTML reports, and export Python/R scripts from the Code Hub.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* Footer */}
         <footer className="mt-auto border-t border-slate-800 py-8 bg-slate-950 text-center text-xs text-slate-500">
           <p>MicrobiomeXpress Studio • Automated ASV Pipeline & Multi-Omics Analytics Suite</p>
