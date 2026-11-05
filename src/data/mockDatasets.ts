@@ -1447,6 +1447,7 @@ export function buildPipelineResultsForSamples(
   }).sort((a, b) => a.otuId.localeCompare(b.otuId, undefined, { numeric: true, sensitivity: 'base' }));
 
   // 5. GENERATE DYNAMIC ALPHA DIVERSITY
+  // 5. GENERATE DYNAMIC ASV ALPHA DIVERSITY
   const alpha = actualSamples.map((sample, idx) => {
     const isTreatment = sample.group.toLowerCase().includes('treat') || idx % 2 === 1;
     const baseShannon = 3.5 + pseudoRandom(idx + 2000) * 0.8;
@@ -1464,7 +1465,20 @@ export function buildPipelineResultsForSamples(
     };
   });
 
-  // 6. GENERATE DYNAMIC BETA DIVERSITY
+  // 6. GENERATE DYNAMIC OTU ALPHA DIVERSITY (Fewer observed clusters due to 97% clustering)
+  const otuAlpha = actualSamples.map((sample, idx) => {
+    const asvAlphaItem = alpha[idx];
+    return {
+      ...asvAlphaItem,
+      shannon: Number((asvAlphaItem.shannon * 0.92).toFixed(2)),
+      simpson: Number((asvAlphaItem.simpson * 0.98).toFixed(2)),
+      chao1: Math.round(asvAlphaItem.chao1 * 0.72),
+      observedASVs: Math.round(asvAlphaItem.observedASVs * 0.68),
+      faithPD: Number((asvAlphaItem.faithPD * 0.85).toFixed(1)),
+    };
+  });
+
+  // 7. GENERATE DYNAMIC ASV BETA DIVERSITY
   const beta = actualSamples.map((sample, idx) => {
     const isTreatment = sample.group.toLowerCase().includes('treat') || idx % 2 === 1;
     const pc1Base = isTreatment ? 0.35 : -0.35;
@@ -1480,7 +1494,18 @@ export function buildPipelineResultsForSamples(
     };
   });
 
-  // 7. GENERATE DYNAMIC QC CURVES
+  // 8. GENERATE DYNAMIC OTU BETA DIVERSITY (Slightly shifted ordination for OTUs)
+  const otuBeta = actualSamples.map((sample, idx) => {
+    const asvBetaItem = beta[idx];
+    return {
+      ...asvBetaItem,
+      pc1: Number((asvBetaItem.pc1 * 1.12 + 0.05).toFixed(2)),
+      pc2: Number((asvBetaItem.pc2 * 0.9 - 0.04).toFixed(2)),
+      pc3: Number((asvBetaItem.pc3 * 1.05).toFixed(2)),
+    };
+  });
+
+  // 9. GENERATE DYNAMIC QC CURVES
   const meanPhredBefore = Number((26 + pseudoRandom(6000) * 4).toFixed(1));
   const meanPhredAfter = Number((34 + pseudoRandom(6500) * 3).toFixed(1));
 
@@ -1514,9 +1539,9 @@ export function buildPipelineResultsForSamples(
     },
     otuDiversity: {
       distanceMetric: 'Bray-Curtis',
-      varianceExplained: [Number((35 + pseudoRandom(9500) * 15).toFixed(1)), Number((18 + pseudoRandom(10000) * 10).toFixed(1)), Number((7 + pseudoRandom(10500) * 5).toFixed(1))],
-      alpha,
-      beta,
+      varianceExplained: [Number((38 + pseudoRandom(9500) * 15).toFixed(1)), Number((22 + pseudoRandom(10000) * 10).toFixed(1)), Number((9 + pseudoRandom(10500) * 5).toFixed(1))],
+      alpha: otuAlpha,
+      beta: otuBeta,
     },
   };
 }

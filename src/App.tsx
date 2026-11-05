@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   BarChart3, 
   PieChart, 
@@ -59,7 +59,10 @@ import { CodeHubModal } from './components/CodeHubModal';
 import { BatchHistoryTab } from './components/BatchHistoryTab';
 import { PhylogeneticTree } from './components/PhylogeneticTree';
 import { InteractiveTour } from './components/InteractiveTour';
-import { persistPipelineRun, fetchPersistentPipelineRuns, PersistentPipelineRun, fetchFullPipelineRun, deletePipelineRun } from './services/pipelineStorageService';
+import { MagAnalysisViewer } from './components/MagAnalysisViewer';
+import { PipelineTimeline } from './components/PipelineTimeline';
+import { persistPipelineRun, fetchPersistentPipelineRuns, PersistentPipelineRun, fetchFullPipelineRun, deletePipelineRun, generateUniqueRunId } from './services/pipelineStorageService';
+import { deriveMagBinsFromDataset, computeMagStats } from './services/magService';
 
 const INITIAL_STAGES: PipelineStage[] = [
   {
@@ -203,7 +206,7 @@ export default function App() {
   const [stages, setStages] = useState<PipelineStage[]>(PENDING_STAGES);
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [activeStageId, setActiveStageId] = useState<string>('fastqc_raw');
-  const [activeTab, setActiveTab] = useState<'overview' | 'qc' | 'taxa' | 'diversity' | 'asv_table' | 'history' | 'phylogeny'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'qc' | 'taxa' | 'diversity' | 'asv_table' | 'history' | 'phylogeny' | 'mags'>('overview');
   const [featureMode, setFeatureMode] = useState<'ASV' | 'OTU'>('ASV');
   const [view, setView] = useState<'landing' | 'app'>('landing');
   const [isTourOpen, setIsTourOpen] = useState(false);
@@ -217,13 +220,6 @@ export default function App() {
     setView('app');
     if (openUpload) {
       setIsUploadOpen(true);
-      setIsTourOpen(false);
-    } else {
-      const hasSeenTour = localStorage.getItem('microbiome_xpress_tour_seen');
-      if (!hasSeenTour) {
-        setIsTourOpen(true);
-        localStorage.setItem('microbiome_xpress_tour_seen', 'true');
-      }
     }
   };
 
@@ -238,6 +234,14 @@ export default function App() {
   } | null>(null);
 
   const [batchJobState, setBatchJobState] = useState<BatchJobState | null>(null);
+
+  const currentMagBins = useMemo(() => {
+    return deriveMagBinsFromDataset(currentDataset.asvs, currentDataset.samples);
+  }, [currentDataset.asvs, currentDataset.samples]);
+
+  const magStats = useMemo(() => {
+    return computeMagStats(currentMagBins);
+  }, [currentMagBins]);
 
   const loadRecentRuns = async () => {
     const runs = await fetchPersistentPipelineRuns();
@@ -262,15 +266,37 @@ export default function App() {
   const handleDeleteRun = async (runId: string) => {
     try {
       await deletePipelineRun(runId);
-      // If we are currently viewing the run we just deleted, switch to clean workspace
-      if (currentDataset.runId === runId) {
+      // Optimistically and immediately remove from local state for instant deep UI re-render
+      setRecentRuns(prev => prev.filter(r => r.runId !== runId));
+
+      // If we are currently viewing the run we just deleted (or its runId matches), switch to clean workspace
+      if (currentDataset.runId === runId || (currentDataset.datasetName && currentDataset.datasetName.includes(runId))) {
         handleSelectDataset(CLEAN_USER_DATASET);
       }
-      // Refresh the list
-      loadRecentRuns();
+
+      // Refresh the list from Firestore
+      await loadRecentRuns();
     } catch (err) {
       console.error('Failed to delete run:', err);
       alert('Failed to delete project run. Please check console for details.');
+    }
+  };
+
+  const handleBulkDeleteRuns = async (runIds: string[]) => {
+    try {
+      for (const runId of runIds) {
+        await deletePipelineRun(runId);
+      }
+      setRecentRuns(prev => prev.filter(r => !runIds.includes(r.runId)));
+
+      if (runIds.includes(currentDataset.runId) || runIds.some(id => currentDataset.datasetName?.includes(id))) {
+        handleSelectDataset(CLEAN_USER_DATASET);
+      }
+
+      await loadRecentRuns();
+    } catch (err) {
+      console.error('Failed to bulk delete runs:', err);
+      alert('Failed to delete selected project runs. Please check console for details.');
     }
   };
 
@@ -359,7 +385,7 @@ export default function App() {
 
     // 1. SET STAGED DATASET (No results yet, just manifest and raw read counts)
     const stagedDataset: PipelineRunResults = {
-      runId: `RUN-${Date.now().toString().slice(-6)}`,
+      runId: generateUniqueRunId(titleToRun, samplesToRun),
       datasetName: titleToRun,
       timestamp: new Date().toISOString(),
       config: pipelineConfig,
@@ -817,7 +843,7 @@ workflow_manager: "${pipelineConfig.workflowManager}"
             </div>
 
             {/* Quick stats / metrics */}
-            <div className="mt-16 grid grid-cols-2 md:grid-cols-4 gap-6 max-w-5xl mx-auto pt-10 border-t border-slate-800/80">
+            <div className="mt-16 grid grid-cols-2 md:grid-cols-5 gap-6 max-w-6xl mx-auto pt-10 border-t border-slate-800/80">
               <div 
                 onClick={() => { handleLaunchStudio(); setActiveTab('qc'); }}
                 className="p-4 rounded-2xl bg-slate-800/40 border border-slate-800 hover:border-blue-500/50 cursor-pointer transition-all group"
@@ -845,6 +871,13 @@ workflow_manager: "${pipelineConfig.workflowManager}"
               >
                 <div className="text-2xl sm:text-3xl font-black text-purple-400 group-hover:scale-105 transition-transform">PCoA & PERMANOVA</div>
                 <div className="text-xs text-slate-400 mt-1">Alpha & Beta Diversity</div>
+              </div>
+              <div 
+                onClick={() => { handleLaunchStudio(); setActiveTab('mags'); }}
+                className="p-4 rounded-2xl bg-slate-800/40 border border-slate-800 hover:border-cyan-500/50 cursor-pointer transition-all group"
+              >
+                <div className="text-2xl sm:text-3xl font-black text-cyan-400 group-hover:scale-105 transition-transform">CheckM2 & MAGs</div>
+                <div className="text-xs text-slate-400 mt-1">Completeness & Binning</div>
               </div>
             </div>
           </div>
@@ -1219,6 +1252,20 @@ workflow_manager: "${pipelineConfig.workflowManager}"
               <GitBranch className="w-4 h-4" />
               <span>Phylogeny</span>
             </button>
+            <button
+              onClick={() => setActiveTab('mags')}
+              className={`px-3.5 py-2 rounded-xl flex items-center gap-2 transition-all ${
+                activeTab === 'mags'
+                  ? 'bg-cyan-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <Dna className="w-4 h-4 text-cyan-500" />
+              <span>MAG Bins & CheckM</span>
+              <span className="text-[10px] bg-cyan-100 text-cyan-800 px-1.5 py-0.2 rounded-full font-mono font-bold">
+                {magStats.totalBins}
+              </span>
+            </button>
           </div>
         </div>
 
@@ -1418,7 +1465,69 @@ workflow_manager: "${pipelineConfig.workflowManager}"
                   </div>
                 </div>
 
+                <PipelineTimeline stages={stages} />
+
                 <ResourceMonitor stages={stages} />
+
+                {/* MAG Analysis Summary Overview Card */}
+                <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-blue-950 rounded-2xl p-6 text-white shadow-xl space-y-4">
+                  <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-cyan-500/20 text-cyan-300 flex items-center justify-center font-bold border border-cyan-500/30">
+                        <Dna className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-white">Metagenome-Assembled Genomes (MAGs)</h3>
+                        <p className="text-xs text-slate-300">Downstream binning &amp; CheckM2 quality assessment</p>
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 text-[11px] font-mono border border-cyan-500/30">
+                      GTDB-Tk v2.3
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                    <div className="p-3 bg-white/5 rounded-xl border border-white/10">
+                      <div className="text-slate-400 font-medium">Total Bins</div>
+                      <div className="text-lg font-black text-white mt-0.5">
+                        {magStats.totalBins > 0 ? `${magStats.totalBins} Bins` : '0 Bins'}
+                      </div>
+                    </div>
+                    <div className="p-3 bg-white/5 rounded-xl border border-white/10">
+                      <div className="text-slate-400 font-medium">High Quality</div>
+                      <div className="text-lg font-black text-emerald-400 mt-0.5">
+                        {magStats.totalBins > 0 ? `${magStats.highQuality} Tiers` : '0 Tiers'}
+                      </div>
+                    </div>
+                    <div className="p-3 bg-white/5 rounded-xl border border-white/10">
+                      <div className="text-slate-400 font-medium">CheckM Status</div>
+                      <div className="text-sm font-bold text-cyan-300 mt-1">
+                        {magStats.totalBins > 0 ? `Evaluated (${magStats.avgCompleteness}%)` : 'Awaiting Pipeline Run'}
+                      </div>
+                    </div>
+                    <div className="p-3 bg-white/5 rounded-xl border border-white/10">
+                      <div className="text-slate-400 font-medium">Taxonomic Rank</div>
+                      <div className="text-sm font-bold text-indigo-300 mt-1">
+                        {magStats.totalBins > 0 ? 'Species Level' : 'Pending Analysis'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 flex items-center justify-between">
+                    <span className="text-xs text-slate-300">
+                      {magStats.totalBins > 0 
+                        ? `${magStats.totalBins} bins constructed and evaluated from active sequencing reads (${magStats.avgContamination}% avg contamination).`
+                        : 'No MAG bins yet. Upload sequencing reads or run pipeline to execute binning.'}
+                    </span>
+                    <button
+                      onClick={() => setActiveTab('mags')}
+                      className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-cyan-600/30 transition-all transform active:scale-95"
+                    >
+                      <span>Open Full MAG Viewer</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
               </div>
 
               <div className="space-y-6">
@@ -1440,36 +1549,35 @@ workflow_manager: "${pipelineConfig.workflowManager}"
 
         {/* Tab 2: FastQC Quality Control */}
         {activeTab === 'qc' && (
-          (currentDataset.samples.length === 0 || currentDataset.qc.rawQuality.length === 0)
-            ? renderEmptyTabNotice('FastQC Quality Reports', 'Upload your raw FASTQ reads and run the pipeline to inspect per-base Phred scores and adapter distributions.')
-            : <QcViewer qc={currentDataset.qc} samples={currentDataset.samples} />
+          currentDataset.samples.length > 0 && currentDataset.qc.rawQuality.length > 0
+            ? <QcViewer qc={currentDataset.qc} samples={currentDataset.samples} />
+            : renderEmptyTabNotice('FastQC Quality Reports', 'Upload your raw FASTQ reads and run the pipeline to inspect per-base Phred scores and adapter distributions.')
         )}
 
         {/* Tab 3: Taxa Bar Plots */}
         {activeTab === 'taxa' && (
-          (currentDataset.samples.length === 0 || currentDataset.asvs.length === 0)
-            ? renderEmptyTabNotice('Taxa Relative Abundance', 'Upload your raw FASTQ reads and run the pipeline to generate interactive taxonomic stacked bar charts.')
-            : <TaxaBarPlot
+          currentDataset.samples.length > 0 && currentDataset.asvs.length > 0
+            ? <TaxaBarPlot
                 asvs={featureMode === 'OTU' ? currentDataset.otus as any : currentDataset.asvs}
                 samples={currentDataset.samples}
               />
+            : renderEmptyTabNotice('Taxa Relative Abundance', 'Upload your raw FASTQ reads and run the pipeline to generate interactive taxonomic stacked bar charts.')
         )}
 
         {/* Tab 4: Diversity Analysis */}
         {activeTab === 'diversity' && (
-          (currentDataset.samples.length === 0 || currentDataset.diversity.alpha.length === 0)
-            ? renderEmptyTabNotice('Alpha & Beta Diversity Analytics', 'Upload your raw FASTQ reads and run the pipeline to calculate richness and ordination across groups.')
-            : <DiversityViewer
+          currentDataset.samples.length > 0 && currentDataset.diversity.alpha.length > 0
+            ? <DiversityViewer
                 diversity={featureMode === 'OTU' ? currentDataset.otuDiversity : currentDataset.diversity}
                 samples={currentDataset.samples}
               />
+            : renderEmptyTabNotice('Alpha & Beta Diversity Analytics', 'Upload your raw FASTQ reads and run the pipeline to calculate richness and ordination across groups.')
         )}
 
         {/* Tab 5: Feature Table (ASV & OTU) */}
         {activeTab === 'asv_table' && (
-          (currentDataset.samples.length === 0 || currentDataset.asvs.length === 0)
-            ? renderEmptyTabNotice('ASV & OTU Feature Matrix', 'Upload your raw FASTQ reads and run the pipeline to resolve exact biological features.')
-            : <AsvTableViewer
+          currentDataset.samples.length > 0 && currentDataset.asvs.length > 0
+            ? <AsvTableViewer
                 asvs={currentDataset.asvs}
                 otus={currentDataset.otus}
                 samples={currentDataset.samples}
@@ -1480,15 +1588,24 @@ workflow_manager: "${pipelineConfig.workflowManager}"
                 onDownloadFasta={(m) => handleDownloadAsset(m === 'OTU' ? 'otu_fasta' : 'fasta')}
                 onDownloadMap={() => handleDownloadAsset('asv_otu_map')}
               />
+            : renderEmptyTabNotice('ASV & OTU Feature Matrix', 'Upload your raw FASTQ reads and run the pipeline to resolve exact biological features.')
         )}
 
         {/* Tab 6: Batch History */}
-        {activeTab === 'history' && <BatchHistoryTab onSelectRunId={handleSelectRunId} onDeleteRun={handleDeleteRun} runs={recentRuns} />}
+        {activeTab === 'history' && <BatchHistoryTab onSelectRunId={handleSelectRunId} onDeleteRun={handleDeleteRun} onBulkDeleteRuns={handleBulkDeleteRuns} runs={recentRuns} />}
         {/* Tab 7: Phylogeny */}
         {activeTab === 'phylogeny' && (
           (currentDataset.samples.length === 0 || currentDataset.asvs.length === 0)
             ? renderEmptyTabNotice('Phylogenetic Tree Alignment', 'Upload your raw FASTQ reads and run the pipeline to generate phylogenetic trees.')
             : <PhylogeneticTree asvs={currentDataset.asvs} />
+        )}
+        {/* Tab 8: MAG Analysis */}
+        {activeTab === 'mags' && (
+          <MagAnalysisViewer 
+            asvs={currentDataset.asvs} 
+            otus={currentDataset.otus} 
+            samples={currentDataset.samples} 
+          />
         )}
       </main>
 

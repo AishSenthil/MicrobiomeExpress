@@ -459,69 +459,109 @@ export const UploadModal: React.FC<UploadModalProps> = ({
               handleSimulateDrop(e.dataTransfer.files);
             }}
             className={`border-2 border-dashed rounded-2xl p-6 text-center transition-all ${
-              dragOver
+              sampleList.length > 0
+                ? 'border-emerald-400 bg-emerald-50/60'
+                : dragOver
                 ? 'border-blue-500 bg-blue-50/50'
                 : 'border-slate-300 hover:border-slate-400 bg-slate-50/50'
             }`}
           >
-            <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 mx-auto flex items-center justify-center mb-3 border border-blue-100">
-              <FileUp className="w-6 h-6" />
-            </div>
-            <h3 className="font-bold text-slate-800 text-sm">
-              {isSingleEnd 
-                ? 'Drag & Drop Single-End FASTQ Files or ZIP Archive (*.zip, *.fastq.gz, *.fq, *.fasta)'
-                : 'Drag & Drop Paired FASTQ Files or ZIP Archive (*.zip, *_R1.fastq, *_R2.fastq)'}
-            </h3>
-            <p className="text-xs text-slate-500 mt-1 max-w-lg mx-auto">
-              Supports raw FASTQ, GZ, FASTA files and <strong>ZIP archives (e.g. test_fastq_small.zip)</strong>. Auto-extracts paired reads and builds your experimental manifest.
-            </p>
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
-              <label className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-xs cursor-pointer shadow-2xs">
-                <span>Browse Files / ZIP</span>
-                <input
-                  type="file"
-                  multiple
-                  accept=".fastq,.fq,.gz,.fasta,.fa,.zip,application/zip,application/x-zip-compressed"
-                  className="hidden"
-                  onChange={(e) => handleSimulateDrop(e.target.files)}
-                />
-              </label>
+            {sampleList.length > 0 ? (
+              <div className="space-y-3">
+                <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 mx-auto flex items-center justify-center border border-emerald-200 shadow-xs">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-emerald-900 text-sm">
+                    Files Successfully Uploaded & Staged ({sampleList.length} Sample Manifest Rows Ready)
+                  </h3>
+                  <p className="text-xs text-emerald-700 mt-0.5">
+                    Your sequencing files are registered and ready to proceed. Review the sample table below or click <strong>Save & Run Pipeline Now 🚀</strong> to start!
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                  <label className="px-3.5 py-1.5 bg-white hover:bg-slate-50 text-emerald-800 border border-emerald-300 font-semibold rounded-lg text-xs cursor-pointer shadow-2xs">
+                    <span>Upload More Files / ZIP</span>
+                    <input
+                      type="file"
+                      multiple
+                      accept=".fastq,.fq,.gz,.fasta,.fa,.zip,application/zip,application/x-zip-compressed"
+                      className="hidden"
+                      onChange={(e) => handleSimulateDrop(e.target.files)}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleSaveAndRun}
+                    className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs shadow-md transition-all flex items-center gap-1.5"
+                  >
+                    <Play className="w-3.5 h-3.5 fill-current" />
+                    <span>Proceed & Run Pipeline Now 🚀</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 mx-auto flex items-center justify-center mb-3 border border-blue-100">
+                  <FileUp className="w-6 h-6" />
+                </div>
+                <h3 className="font-bold text-slate-800 text-sm">
+                  {isSingleEnd 
+                    ? 'Drag & Drop Single-End FASTQ Files or ZIP Archive (*.zip, *.fastq.gz, *.fq, *.fasta)'
+                    : 'Drag & Drop Paired FASTQ Files or ZIP Archive (*.zip, *_R1.fastq, *_R2.fastq)'}
+                </h3>
+                <p className="text-xs text-slate-500 mt-1 max-w-lg mx-auto">
+                  Supports raw FASTQ, GZ, FASTA files and <strong>ZIP archives (e.g. test_fastq_small.zip)</strong>. Auto-extracts paired reads and builds your experimental manifest.
+                </p>
+                <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
+                  <label className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-xs cursor-pointer shadow-2xs">
+                    <span>Browse Files / ZIP</span>
+                    <input
+                      type="file"
+                      multiple
+                      accept=".fastq,.fq,.gz,.fasta,.fa,.zip,application/zip,application/x-zip-compressed"
+                      className="hidden"
+                      onChange={(e) => handleSimulateDrop(e.target.files)}
+                    />
+                  </label>
 
-              {/* Mock Loaders for Both Layouts */}
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedLayout('paired');
-                  onLoadMockFiles();
-                }}
-                className={`px-3 py-1.5 font-semibold rounded-lg text-xs border transition-colors flex items-center gap-1.5 ${
-                  !isSingleEnd
-                    ? 'bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-200'
-                    : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
-                }`}
-                title="Load 6 Paired-End FASTQ demo samples"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-                <span>Load 6 Mock FASTQ Pairs</span>
-              </button>
+                  {/* Mock Loaders for Both Layouts */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedLayout('paired');
+                      onLoadMockFiles();
+                    }}
+                    className={`px-3 py-1.5 font-semibold rounded-lg text-xs border transition-colors flex items-center gap-1.5 ${
+                      !isSingleEnd
+                        ? 'bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-200'
+                        : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+                    }`}
+                    title="Load 6 Paired-End FASTQ demo samples"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Load 6 Mock FASTQ Pairs</span>
+                  </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedLayout('single');
-                  onLoadSingleEndMockFiles();
-                }}
-                className={`px-3 py-1.5 font-semibold rounded-lg text-xs border transition-colors flex items-center gap-1.5 ${
-                  isSingleEnd
-                    ? 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200'
-                    : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
-                }`}
-                title="Load 6 Single-End FASTQ demo samples"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                <span>Load 6 Mock Single-End Reads</span>
-              </button>
-            </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedLayout('single');
+                      onLoadSingleEndMockFiles();
+                    }}
+                    className={`px-3 py-1.5 font-semibold rounded-lg text-xs border transition-colors flex items-center gap-1.5 ${
+                      isSingleEnd
+                        ? 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200'
+                        : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+                    }`}
+                    title="Load 6 Single-End FASTQ demo samples"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Load 6 Mock Single-End Reads</span>
+                  </button>
+                </div>
+              </>
+            )}
           </div>
 
           {uploadNotice && (

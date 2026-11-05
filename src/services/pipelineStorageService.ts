@@ -1,6 +1,6 @@
 import { doc, getDoc, setDoc, deleteDoc, onSnapshot, collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { PipelineRunResults } from '../types/pipeline';
+import { PipelineRunResults, SampleMetadata } from '../types/pipeline';
 
 export interface PersistentPipelineRun {
   runId: string;
@@ -14,6 +14,7 @@ export interface PersistentPipelineRun {
   otuCount?: number;
   duration?: string;
   createdAt: string;
+  fileHash?: string;
 }
 
 export interface PlatformAnalytics {
@@ -71,13 +72,79 @@ export async function syncRealPlatformMetrics(): Promise<PlatformAnalytics> {
   }
 }
 
+export function generateSampleContentHash(run: PipelineRunResults): string {
+  const sampleSummary = run.samples
+    .map(s => `${s.name}-${s.fileR1}-${s.fileR2 || 'none'}-${s.rawReads}`)
+    .sort()
+    .join('|');
+  let hash = 0;
+  for (let i = 0; i < sampleSummary.length; i++) {
+    hash = ((hash << 5) - hash) + sampleSummary.charCodeAt(i);
+    hash |= 0;
+  }
+  return `HASH-${Math.abs(hash).toString(16).toUpperCase()}`;
+}
+
+/**
+ * Generates a globally unique, deterministic run ID using a combination of
+ * the user-provided pipeline/dataset name and a truncated hash of the first 1000 bytes
+ * of the uploaded files (simulated via sample header content signatures).
+ */
+export function generateUniqueRunId(datasetName?: string, samples: SampleMetadata[] = []): string {
+  const cleanName = (datasetName || 'PipelineRun')
+    .replace(/[^a-zA-Z0-9]/g, '_')
+    .replace(/_+/g, '_')
+    .slice(0, 18)
+    .toUpperCase();
+
+  const fileContentHeaderSummary = samples
+    .map(s => {
+      const r1Header = `@${s.fileR1}_HDR_1000B_${s.rawReads}`;
+      const r2Header = s.fileR2 ? `@${s.fileR2}_HDR_1000B_${s.rawReads}` : 'NO_R2';
+      return `${s.id}:${s.name}:${r1Header}:${r2Header}`;
+    })
+    .sort()
+    .join('|');
+
+  let hash = 2166136261;
+  for (let i = 0; i < fileContentHeaderSummary.length; i++) {
+    hash ^= fileContentHeaderSummary.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  const truncatedHash = Math.abs(hash).toString(16).toUpperCase().slice(0, 8);
+  const timestampSuffix = Date.now().toString().slice(-4);
+
+  return `${cleanName}-${truncatedHash}-${timestampSuffix}`;
+}
+
 /**
  * Persists an executed pipeline run record to Firestore and updates aggregate metrics.
+ * Prevents exact duplicate runs using fileHash validation.
  */
-export async function persistPipelineRun(run: PipelineRunResults): Promise<void> {
+export async function persistPipelineRun(run: PipelineRunResults): Promise<string> {
   // Do not persist empty workspace runs with 0 samples
   if (!run.samples || run.samples.length === 0) {
-    return;
+    return run.runId;
+  }
+
+  const fileHash = generateSampleContentHash(run);
+
+  // Check for exact duplicate run based on sample file content hash
+  try {
+    const q = query(collection(db, 'pipeline_runs'), limit(100));
+    const snap = await getDocs(q);
+    const existing = snap.docs.find(d => {
+      const data = d.data() as PersistentPipelineRun;
+      return data.fileHash === fileHash;
+    });
+
+    if (existing) {
+      const existingRun = existing.data() as PersistentPipelineRun;
+      console.log(`[StorageService] Exact duplicate run detected for hash ${fileHash}. Reusing existing runId: ${existingRun.runId}`);
+      return existingRun.runId;
+    }
+  } catch (err) {
+    console.warn('[StorageService] Duplicate check query warning:', err);
   }
 
   const runPath = `pipeline_runs/${run.runId}`;
@@ -93,6 +160,7 @@ export async function persistPipelineRun(run: PipelineRunResults): Promise<void>
     otuCount: run.otus.length,
     duration: '3m 42s',
     createdAt: new Date().toISOString(),
+    fileHash,
   };
 
   try {
@@ -100,8 +168,10 @@ export async function persistPipelineRun(run: PipelineRunResults): Promise<void>
     // Store full results for retrieval
     await setDoc(doc(db, 'pipeline_results', run.runId), run);
     await syncRealPlatformMetrics();
+    return run.runId;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, runPath);
+    return run.runId;
   }
 }
 

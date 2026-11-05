@@ -19,12 +19,20 @@ export const PhylogeneticTree: React.FC<PhylogeneticTreeProps> = ({ asvs }) => {
       children: [] as any[]
     };
 
-    asvs.forEach(asv => {
+      asvs.forEach(asv => {
       let currentLevel = root.children;
-      const ranks = [asv.kingdom, asv.phylum, asv.classTaxa, asv.order, asv.family, asv.genus, asv.species];
+      // Filter out empty or 'Unclassified' ranks to prevent clutter
+      const ranks = [
+        asv.kingdom, 
+        asv.phylum, 
+        asv.classTaxa, 
+        asv.order, 
+        asv.family, 
+        asv.genus, 
+        asv.species
+      ].filter(rank => rank && rank !== 'Unclassified' && rank !== 'NA');
       
       ranks.forEach((rank, i) => {
-        if (!rank) return;
         let node = currentLevel.find(n => n.name === rank);
         if (!node) {
           node = { name: rank, children: [] };
