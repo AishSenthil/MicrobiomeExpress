@@ -23,7 +23,8 @@ import {
   HardDrive,
   Zap,
   History,
-  GitBranch
+  GitBranch,
+  X
 } from 'lucide-react';
 
 import { 
@@ -206,7 +207,7 @@ export default function App() {
   const [stages, setStages] = useState<PipelineStage[]>(PENDING_STAGES);
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [activeStageId, setActiveStageId] = useState<string>('fastqc_raw');
-  const [activeTab, setActiveTab] = useState<'overview' | 'qc' | 'taxa' | 'diversity' | 'asv_table' | 'history' | 'phylogeny' | 'mags'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'qc' | 'taxa' | 'diversity' | 'asv_table' | 'phylogeny' | 'mags'>('overview');
   const [featureMode, setFeatureMode] = useState<'ASV' | 'OTU'>('ASV');
   const [view, setView] = useState<'landing' | 'app'>('landing');
   const [isTourOpen, setIsTourOpen] = useState(false);
@@ -228,6 +229,7 @@ export default function App() {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isCodeHubOpen, setIsCodeHubOpen] = useState(false);
   const [isReportOpen, setIsReportOpen] = useState(false);
+  const [isBatchHistoryModalOpen, setIsBatchHistoryModalOpen] = useState(false);
   const [stagedNotification, setStagedNotification] = useState<{
     count: number;
     layout: string;
@@ -1103,6 +1105,7 @@ workflow_manager: "${pipelineConfig.workflowManager}"
         onOpenUpload={() => setIsUploadOpen(true)}
         onOpenCodeHub={() => setIsCodeHubOpen(true)}
         onOpenReport={() => setIsReportOpen(true)}
+        onOpenBatchHistory={() => setIsBatchHistoryModalOpen(true)}
         onDownloadAsset={handleDownloadAsset}
         recentRuns={recentRuns}
         onSelectRunId={handleSelectRunId}
@@ -1230,17 +1233,6 @@ workflow_manager: "${pipelineConfig.workflowManager}"
               </span>
             </button>
 
-            <button
-              onClick={() => setActiveTab('history')}
-              className={`px-3.5 py-2 rounded-xl flex items-center gap-2 transition-all ${
-                activeTab === 'history'
-                  ? 'bg-slate-800 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <History className="w-4 h-4" />
-              <span>Batch History</span>
-            </button>
             <button
               onClick={() => setActiveTab('phylogeny')}
               className={`px-3.5 py-2 rounded-xl flex items-center gap-2 transition-all ${
@@ -1496,7 +1488,7 @@ workflow_manager: "${pipelineConfig.workflowManager}"
                     <div className="p-3 bg-white/5 rounded-xl border border-white/10">
                       <div className="text-slate-400 font-medium">High Quality</div>
                       <div className="text-lg font-black text-emerald-400 mt-0.5">
-                        {magStats.totalBins > 0 ? `${magStats.highQuality} Tiers` : '0 Tiers'}
+                        {magStats.totalBins > 0 ? `${magStats.highQuality} High / ${magStats.mediumQuality} Med` : '0 Tiers'}
                       </div>
                     </div>
                     <div className="p-3 bg-white/5 rounded-xl border border-white/10">
@@ -1508,7 +1500,7 @@ workflow_manager: "${pipelineConfig.workflowManager}"
                     <div className="p-3 bg-white/5 rounded-xl border border-white/10">
                       <div className="text-slate-400 font-medium">Taxonomic Rank</div>
                       <div className="text-sm font-bold text-indigo-300 mt-1">
-                        {magStats.totalBins > 0 ? 'Species Level' : 'Pending Analysis'}
+                        {magStats.totalBins > 0 ? 'Species Level (GTDB-Tk)' : 'Pending Analysis'}
                       </div>
                     </div>
                   </div>
@@ -1591,9 +1583,7 @@ workflow_manager: "${pipelineConfig.workflowManager}"
             : renderEmptyTabNotice('ASV & OTU Feature Matrix', 'Upload your raw FASTQ reads and run the pipeline to resolve exact biological features.')
         )}
 
-        {/* Tab 6: Batch History */}
-        {activeTab === 'history' && <BatchHistoryTab onSelectRunId={handleSelectRunId} onDeleteRun={handleDeleteRun} onBulkDeleteRuns={handleBulkDeleteRuns} runs={recentRuns} />}
-        {/* Tab 7: Phylogeny */}
+        {/* Tab 6: Phylogeny */}
         {activeTab === 'phylogeny' && (
           (currentDataset.samples.length === 0 || currentDataset.asvs.length === 0)
             ? renderEmptyTabNotice('Phylogenetic Tree Alignment', 'Upload your raw FASTQ reads and run the pipeline to generate phylogenetic trees.')
@@ -1695,6 +1685,50 @@ workflow_manager: "${pipelineConfig.workflowManager}"
         onClose={() => setIsReportOpen(false)}
         dataset={currentDataset}
       />
+
+      {/* Dedicated Batch History Manager Modal (Moved out of pipeline data tabs) */}
+      {isBatchHistoryModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 sm:p-6 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-5xl w-full max-h-[92vh] overflow-hidden shadow-2xl border border-slate-200 flex flex-col">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-900 text-white shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-white/10 flex items-center justify-center text-cyan-400 border border-white/15">
+                  <History className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <span>Pipeline Batch History & Checkpoints</span>
+                    <span className="text-[11px] bg-cyan-500/20 text-cyan-300 font-mono px-2 py-0.5 rounded-full border border-cyan-500/30">
+                      {recentRuns.length} Runs
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-300">
+                    Review and switch between stored pipeline runs, inspect execution manifests, or manage runs.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsBatchHistoryModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+                title="Close Batch History"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto flex-1 bg-slate-50/50">
+              <BatchHistoryTab
+                onSelectRunId={(runId) => {
+                  handleSelectRunId(runId);
+                  setIsBatchHistoryModalOpen(false);
+                }}
+                onDeleteRun={handleDeleteRun}
+                onBulkDeleteRuns={handleBulkDeleteRuns}
+                runs={recentRuns}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       <CodeHubModal
         isOpen={isCodeHubOpen}

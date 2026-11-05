@@ -13,7 +13,8 @@ import {
   ChevronDown,
   HelpCircle,
   Search,
-  Trash2
+  Trash2,
+  History
 } from 'lucide-react';
 import { PipelineRunResults } from '../types/pipeline';
 import { AVAILABLE_DATASETS, CLEAN_USER_DATASET } from '../data/mockDatasets';
@@ -26,8 +27,9 @@ interface HeaderProps {
   onRunPipeline: () => void;
   onOpenConfig: () => void;
   onOpenUpload: () => void;
-  onOpenCodeHub: () => void;
+  onOpenCodeHub?: () => void;
   onOpenReport: () => void;
+  onOpenBatchHistory?: () => void;
   onDownloadAsset: (assetType: 'asv_tsv' | 'asv_biom' | 'fasta' | 'otu_tsv' | 'otu_biom' | 'otu_fasta' | 'asv_otu_map' | 'params' | 'html_report') => void;
   recentRuns: PersistentPipelineRun[];
   onSelectRunId: (runId: string) => void;
@@ -51,6 +53,7 @@ export const Header: React.FC<HeaderProps> = ({
   onDeleteRun,
   onReturnToLanding,
   onStartTour,
+  onOpenBatchHistory,
 }) => {
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [projectSwitcherOpen, setProjectSwitcherOpen] = useState(false);
@@ -240,15 +243,22 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="hidden sm:inline">Parameters</span>
             </button>
 
-            {/* Pipeline Scripts & Code */}
-            <button
-              onClick={onOpenCodeHub}
-              className="px-3.5 py-1.5 text-xs font-bold text-purple-950 bg-gradient-to-r from-purple-50 to-indigo-50 hover:from-purple-100 hover:to-indigo-100 border border-purple-200/90 rounded-xl flex items-center gap-1.5 transition-all shadow-2xs active:scale-95"
-              title="Inspect Python wrappers, Snakemake, Nextflow, and Dockerfile"
-            >
-              <FileCode2 className="w-3.5 h-3.5 text-purple-600" />
-              <span className="hidden sm:inline">Repo & Scripts</span>
-            </button>
+            {/* Batch History Manager (Moved out of pipeline data tabs) */}
+            {onOpenBatchHistory && (
+              <button
+                onClick={onOpenBatchHistory}
+                className="px-3.5 py-1.5 text-xs font-bold text-slate-800 bg-gradient-to-r from-slate-100 to-slate-200 hover:from-slate-200 hover:to-slate-300 border border-slate-300/90 rounded-xl flex items-center gap-1.5 transition-all shadow-2xs active:scale-95"
+                title="View previous pipeline run checkpoints and execution logs"
+              >
+                <History className="w-3.5 h-3.5 text-slate-700" />
+                <span className="hidden sm:inline">Batch History</span>
+                {recentRuns && recentRuns.length > 0 && (
+                  <span className="text-[10px] bg-slate-800 text-white font-mono font-bold px-1.5 py-0.2 rounded-full">
+                    {recentRuns.length}
+                  </span>
+                )}
+              </button>
+            )}
 
             {/* Report Button */}
             <button

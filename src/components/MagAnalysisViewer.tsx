@@ -92,11 +92,13 @@ export const MagAnalysisViewer: React.FC<MagAnalysisViewerProps> = ({
   useEffect(() => {
     if (!autoSyncEnabled) return;
 
-    // Check if ASVs changed in length or reference
+    // Check if ASVs changed in length, reference, sequence, or abundance
     const hasLengthChanged = prevAsvsRef.current.length !== asvs.length;
-    const hasIdChanged = asvs.length > 0 && prevAsvsRef.current[0]?.asvId !== asvs[0]?.asvId;
+    const hasSeqChanged = asvs.length > 0 && prevAsvsRef.current[0]?.sequence !== asvs[0]?.sequence;
+    const hasReadsChanged = asvs.length > 0 && prevAsvsRef.current[0]?.totalReads !== asvs[0]?.totalReads;
+    const hasRefChanged = asvs !== prevAsvsRef.current;
 
-    if (hasLengthChanged || hasIdChanged) {
+    if (hasLengthChanged || hasSeqChanged || hasReadsChanged || (hasRefChanged && asvs.length > 0)) {
       prevAsvsRef.current = asvs;
       const freshlyDerived = deriveMagBinsFromDataset(asvs, samples);
       setBins(freshlyDerived);
@@ -653,6 +655,18 @@ export const MagAnalysisViewer: React.FC<MagAnalysisViewerProps> = ({
                 >
                   Medium ({stats.mediumQuality})
                 </button>
+                {stats.lowQuality > 0 && (
+                  <button
+                    onClick={() => setQualityFilter('Low Quality')}
+                    className={`px-2.5 py-1 rounded-lg transition-all ${
+                      qualityFilter === 'Low Quality'
+                        ? 'bg-white text-rose-700 shadow-2xs font-bold'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Low ({stats.lowQuality})
+                  </button>
+                )}
               </div>
 
               {/* Search input */}

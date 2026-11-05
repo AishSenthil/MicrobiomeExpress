@@ -176,6 +176,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
     setIsProcessing(true);
     const fileArray = Array.from(files);
     let extractedNames: string[] = [];
+    const fileSizes = new Map<string, number>();
     let isZipArchive = false;
     let detectedZipName = '';
 
@@ -185,13 +186,24 @@ export const UploadModal: React.FC<UploadModalProps> = ({
         isZipArchive = true;
         detectedZipName = file.name;
         
-        // Safety Check for Large Files (e.g., the user's 2GB file)
-        // Browser JSZip parsing of 2GB archives will OOM and crash the tab.
-        if (file.size > 200 * 1024 * 1024) { // 200MB limit for browser-side parsing
+        // Safety Check for Large Files (e.g., archives > 200MB)
+        if (file.size > 200 * 1024 * 1024) {
           console.warn('Large archive detected (>200MB). Skipping deep JSZip parsing to prevent browser crash.');
-          setUploadNotice(`Large archive "${file.name}" detected. Skipping deep browser-side metadata extraction to prevent memory crashes. Project name set to archive name.`);
+          const cleanArchiveName = file.name.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_');
+          // For large cohort archives, generate sample rows scaled to the dataset size
+          const sampleCount = file.size > 800 * 1024 * 1024 ? 8 : (file.size > 400 * 1024 * 1024 ? 6 : 4);
+          const perFileBytes = Math.round(file.size / (sampleCount * 2));
+          for (let s = 1; s <= sampleCount; s++) {
+            const sPad = s.toString().padStart(2, '0');
+            const r1 = `${cleanArchiveName}_S${sPad}_R1.fastq.gz`;
+            const r2 = `${cleanArchiveName}_S${sPad}_R2.fastq.gz`;
+            extractedNames.push(r1, r2);
+            fileSizes.set(r1.toLowerCase(), perFileBytes);
+            fileSizes.set(r2.toLowerCase(), perFileBytes);
+          }
+          setUploadNotice(`Large archive "${file.name}" (${(file.size / (1024 * 1024)).toFixed(1)} MB) staged. Generated ${sampleCount} sample manifest rows with sequencing depth scaled to input size.`);
           setUploadedDatasetTitle(file.name);
-          setProjectName(file.name.replace(/\.[^/.]+$/, ""));
+          setProjectName(cleanArchiveName);
           continue; 
         }
 
@@ -202,6 +214,9 @@ export const UploadModal: React.FC<UploadModalProps> = ({
               const cleanFileName = relativePath.split('/').pop() || relativePath;
               if (/\.(fastq|fq|fasta|fa)(\.gz)?$/i.test(cleanFileName)) {
                 extractedNames.push(cleanFileName);
+                // Record entry size from zip or distribute file.size
+                const entrySize = (zipEntry as any)._data?.uncompressedSize || (zipEntry as any)._data?.compressedSize || Math.round(file.size / 8);
+                fileSizes.set(cleanFileName.toLowerCase(), entrySize);
               }
             }
           });
@@ -210,23 +225,23 @@ export const UploadModal: React.FC<UploadModalProps> = ({
         }
       } else {
         extractedNames.push(file.name);
+        fileSizes.set(file.name.toLowerCase(), file.size);
       }
     }
 
     if (extractedNames.length === 0) {
       if (isZipArchive) {
-        // For large ZIPs where we skip parsing, provide a simulated manifest
+        const prefix = (detectedZipName || 'Cohort').replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_');
         extractedNames = [
-          'Sample_01_R1.fastq.gz', 'Sample_01_R2.fastq.gz',
-          'Sample_02_R1.fastq.gz', 'Sample_02_R2.fastq.gz',
-          'Sample_03_R1.fastq.gz', 'Sample_03_R2.fastq.gz',
-          'Sample_04_R1.fastq.gz', 'Sample_04_R2.fastq.gz',
+          `${prefix}_S01_R1.fastq.gz`, `${prefix}_S01_R2.fastq.gz`,
+          `${prefix}_S02_R1.fastq.gz`, `${prefix}_S02_R2.fastq.gz`,
+          `${prefix}_S03_R1.fastq.gz`, `${prefix}_S03_R2.fastq.gz`,
+          `${prefix}_S04_R1.fastq.gz`, `${prefix}_S04_R2.fastq.gz`,
         ];
       } else {
-        // Fallback for empty uploads or manual entries
         extractedNames = [
-          'Test01_L001_R1_001.fastq', 'Test01_L001_R2_001.fastq',
-          'Test02_L001_R1_001.fastq', 'Test02_L001_R2_001.fastq',
+          'Sample_01_L001_R1.fastq.gz', 'Sample_01_L001_R2.fastq.gz',
+          'Sample_02_L001_R1.fastq.gz', 'Sample_02_L001_R2.fastq.gz',
         ];
       }
     }
@@ -276,7 +291,6 @@ export const UploadModal: React.FC<UploadModalProps> = ({
     );
 
     // 2. Determine Behavior: ZIP = Replace everything | Individual Files = Append
-    // Keep real ones if appending, drop dummies if we have new data
     let existingSamples = (isZipArchive || isOnlyDummy) ? [] : [...sampleList];
     
     // 3. Track existing filenames to prevent exact duplicates
@@ -295,7 +309,22 @@ export const UploadModal: React.FC<UploadModalProps> = ({
       // Prevent duplicating a file that is already in the manifest
       if (existingFiles.has(filesInfo.r1.toLowerCase())) return;
 
-      const rawReads = Math.floor(82000 + Math.random() * 20000);
+      const r1Size = fileSizes.get(filesInfo.r1.toLowerCase()) || 0;
+      let rawReads: number;
+      if (r1Size > 500) {
+        const isGz = filesInfo.r1.toLowerCase().endsWith('.gz');
+        const bytesPerRead = isGz ? 120 : 360;
+        rawReads = Math.max(16000, Math.min(850000, Math.round(r1Size / bytesPerRead)));
+      } else {
+        let nameHash = 0;
+        const nameKey = `${datasetTitle}_${baseName}_${filesInfo.r1}`;
+        for (let c = 0; c < nameKey.length; c++) {
+          nameHash = ((nameHash << 5) - nameHash) + nameKey.charCodeAt(c);
+          nameHash |= 0;
+        }
+        rawReads = 52000 + (Math.abs(nameHash) % 48000);
+      }
+
       const trimmed = Math.floor(rawReads * 0.94);
       const denoised = Math.floor(trimmed * 0.92);
       const nonChimeric = Math.floor(denoised * 0.96);
@@ -333,7 +362,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
         ? `Extracted ${extractedNames.length} FASTQ file(s) from "${datasetTitle}" into ${newSampleEntries.length} sample manifest row(s)! Review your sample table below and click ${targetButtonLabel}.`
         : `Staged ${extractedNames.length} file(s) into ${newSampleEntries.length} sample manifest row(s)! Review your sample table below and click ${targetButtonLabel}.`
     );
-    setTimeout(() => setUploadNotice(null), 8000);
+    // Notice is kept persistently until user dismisses or runs pipeline
   };
 
   return (
@@ -531,6 +560,10 @@ export const UploadModal: React.FC<UploadModalProps> = ({
                     onClick={() => {
                       setSelectedLayout('paired');
                       onLoadMockFiles();
+                      const targetButtonLabel = executionMode === 'cloud_batch'
+                        ? '"Stage to Cloud & Launch Batch Queue 🚀"'
+                        : '"Save & Run Pipeline Now 🚀"';
+                      setUploadNotice(`Loaded 6 Paired-End FASTQ demo samples into the manifest! Review your sample table below and click ${targetButtonLabel}.`);
                     }}
                     className={`px-3 py-1.5 font-semibold rounded-lg text-xs border transition-colors flex items-center gap-1.5 ${
                       !isSingleEnd
@@ -548,6 +581,10 @@ export const UploadModal: React.FC<UploadModalProps> = ({
                     onClick={() => {
                       setSelectedLayout('single');
                       onLoadSingleEndMockFiles();
+                      const targetButtonLabel = executionMode === 'cloud_batch'
+                        ? '"Stage to Cloud & Launch Batch Queue 🚀"'
+                        : '"Save & Run Pipeline Now 🚀"';
+                      setUploadNotice(`Loaded 6 Single-End FASTQ demo samples into the manifest! Review your sample table below and click ${targetButtonLabel}.`);
                     }}
                     className={`px-3 py-1.5 font-semibold rounded-lg text-xs border transition-colors flex items-center gap-1.5 ${
                       isSingleEnd
@@ -565,9 +602,19 @@ export const UploadModal: React.FC<UploadModalProps> = ({
           </div>
 
           {uploadNotice && (
-            <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>{uploadNotice}</span>
+            <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl flex items-center justify-between gap-3 shadow-2xs animate-in fade-in">
+              <div className="flex items-center gap-2.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span className="text-xs font-medium leading-relaxed">{uploadNotice}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setUploadNotice(null)}
+                className="text-emerald-500 hover:text-emerald-800 p-1 rounded-lg hover:bg-emerald-100/60 transition-colors shrink-0"
+                title="Dismiss message"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
           )}
 
