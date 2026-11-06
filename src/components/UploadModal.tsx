@@ -23,14 +23,36 @@ import {
   FolderArchive
 } from 'lucide-react';
 import { SampleMetadata, SequencingType } from '../types/pipeline';
+import { extractZipEntryList } from '../utils/zipReader';
+
+export const countSampleFastqFiles = (samplesList: SampleMetadata[]): number => {
+  return samplesList.reduce((acc, s) => {
+    let count = 0;
+    if (s.fileR1 && s.fileR1.trim()) count++;
+    if (s.fileR2 && s.fileR2.trim() && s.layout !== 'single') count++;
+    return acc;
+  }, 0);
+};
 
 interface UploadModalProps {
   isOpen: boolean;
   onClose: () => void;
   samples: SampleMetadata[];
   sequencingType: SequencingType;
-  onUpdateSamples: (samples: SampleMetadata[], newType?: SequencingType, executionMode?: 'cloud_batch' | 'interactive', datasetName?: string) => void;
-  onSaveAndRun?: (samples: SampleMetadata[], newType?: SequencingType, executionMode?: 'cloud_batch' | 'interactive', datasetName?: string) => void;
+  onUpdateSamples: (
+    samples: SampleMetadata[], 
+    newType?: SequencingType, 
+    executionMode?: 'cloud_batch' | 'interactive', 
+    datasetName?: string,
+    exactFileCount?: number
+  ) => void;
+  onSaveAndRun?: (
+    samples: SampleMetadata[], 
+    newType?: SequencingType, 
+    executionMode?: 'cloud_batch' | 'interactive', 
+    datasetName?: string,
+    exactFileCount?: number
+  ) => void;
   onLoadMockFiles: () => void;
   onLoadSingleEndMockFiles: () => void;
 }
@@ -85,6 +107,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
     samples && samples.length > 0 ? samples : []
   );
   const [uploadedDatasetTitle, setUploadedDatasetTitle] = useState<string>('');
+  const [exactArchiveFileCount, setExactArchiveFileCount] = useState<number | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [uploadNotice, setUploadNotice] = useState<string | null>(null);
 
@@ -151,8 +174,13 @@ export const UploadModal: React.FC<UploadModalProps> = ({
       alert('Please upload FASTQ files or add sample rows before saving.');
       return;
     }
-    const title = projectName || uploadedDatasetTitle || `${finalSamples.length} Uploaded FASTQ Samples`;
-    onUpdateSamples(finalSamples, selectedLayout, executionMode, title);
+    // If pipeline name is not given while upload, take the file name as default
+    const defaultFileName = uploadedDatasetTitle 
+      || (finalSamples[0]?.fileR1 ? finalSamples[0].fileR1 : '') 
+      || `${finalSamples.length} Uploaded FASTQ Samples`;
+    const title = (projectName && projectName.trim()) ? projectName.trim() : defaultFileName;
+    const exactFileCount = exactArchiveFileCount ?? countSampleFastqFiles(finalSamples);
+    onUpdateSamples(finalSamples, selectedLayout, executionMode, title, exactFileCount);
     onClose();
   };
 
@@ -162,11 +190,16 @@ export const UploadModal: React.FC<UploadModalProps> = ({
       alert('Please upload FASTQ files or add sample rows before launching the pipeline.');
       return;
     }
-    const title = projectName || uploadedDatasetTitle || `${finalSamples.length} Uploaded FASTQ Samples`;
+    // If pipeline name is not given while upload, take the file name as default
+    const defaultFileName = uploadedDatasetTitle 
+      || (finalSamples[0]?.fileR1 ? finalSamples[0].fileR1 : '') 
+      || `${finalSamples.length} Uploaded FASTQ Samples`;
+    const title = (projectName && projectName.trim()) ? projectName.trim() : defaultFileName;
+    const exactFileCount = exactArchiveFileCount ?? countSampleFastqFiles(finalSamples);
     if (onSaveAndRun) {
-      onSaveAndRun(finalSamples, selectedLayout, executionMode, title);
+      onSaveAndRun(finalSamples, selectedLayout, executionMode, title, exactFileCount);
     } else {
-      onUpdateSamples(finalSamples, selectedLayout, executionMode, title);
+      onUpdateSamples(finalSamples, selectedLayout, executionMode, title, exactFileCount);
     }
     onClose();
   };
@@ -186,42 +219,40 @@ export const UploadModal: React.FC<UploadModalProps> = ({
         isZipArchive = true;
         detectedZipName = file.name;
         
-        // Safety Check for Large Files (e.g., archives > 200MB)
-        if (file.size > 200 * 1024 * 1024) {
-          console.warn('Large archive detected (>200MB). Skipping deep JSZip parsing to prevent browser crash.');
-          const cleanArchiveName = file.name.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_');
-          // For large cohort archives, generate sample rows scaled to the dataset size
-          const sampleCount = file.size > 800 * 1024 * 1024 ? 8 : (file.size > 400 * 1024 * 1024 ? 6 : 4);
-          const perFileBytes = Math.round(file.size / (sampleCount * 2));
-          for (let s = 1; s <= sampleCount; s++) {
-            const sPad = s.toString().padStart(2, '0');
-            const r1 = `${cleanArchiveName}_S${sPad}_R1.fastq.gz`;
-            const r2 = `${cleanArchiveName}_S${sPad}_R2.fastq.gz`;
-            extractedNames.push(r1, r2);
-            fileSizes.set(r1.toLowerCase(), perFileBytes);
-            fileSizes.set(r2.toLowerCase(), perFileBytes);
-          }
-          setUploadNotice(`Large archive "${file.name}" (${(file.size / (1024 * 1024)).toFixed(1)} MB) staged. Generated ${sampleCount} sample manifest rows with sequencing depth scaled to input size.`);
-          setUploadedDatasetTitle(file.name);
-          setProjectName(cleanArchiveName);
-          continue; 
-        }
-
+        // 1. Fast, memory-safe ZIP and ZIP64 Central Directory parser
+        // Reads only the few KBs of file headers from the tail of the file via slice()
+        // Works seamlessly on multi-gigabyte files (e.g. 3.1 GB test_fastq_full.zip) without memory limits
         try {
-          const zip = await JSZip.loadAsync(file);
-          zip.forEach((relativePath, zipEntry) => {
-            if (!zipEntry.dir && !relativePath.includes('__MACOSX') && !relativePath.startsWith('.')) {
-              const cleanFileName = relativePath.split('/').pop() || relativePath;
-              if (/\.(fastq|fq|fasta|fa)(\.gz)?$/i.test(cleanFileName)) {
-                extractedNames.push(cleanFileName);
-                // Record entry size from zip or distribute file.size
-                const entrySize = (zipEntry as any)._data?.uncompressedSize || (zipEntry as any)._data?.compressedSize || Math.round(file.size / 8);
-                fileSizes.set(cleanFileName.toLowerCase(), entrySize);
+          const zipEntries = await extractZipEntryList(file);
+          if (zipEntries && zipEntries.length > 0) {
+            for (const entry of zipEntries) {
+              if (/\.(fastq|fq|fasta|fa)(\.gz)?$/i.test(entry.name)) {
+                extractedNames.push(entry.name);
+                fileSizes.set(entry.name.toLowerCase(), entry.uncompressedSize || entry.compressedSize || 350000000);
               }
             }
-          });
-        } catch (err) {
-          console.warn('Could not read ZIP contents via JSZip:', err);
+          }
+        } catch (fastErr) {
+          console.warn('Central directory parse attempt error:', fastErr);
+        }
+
+        // 2. Fallback to JSZip for smaller archives if central directory returned no FASTQs
+        if (extractedNames.length === 0 && file.size < 150 * 1024 * 1024) {
+          try {
+            const zip = await JSZip.loadAsync(file);
+            zip.forEach((relativePath, zipEntry) => {
+              if (!zipEntry.dir && !relativePath.includes('__MACOSX') && !relativePath.startsWith('.')) {
+                const cleanFileName = relativePath.split('/').pop() || relativePath;
+                if (/\.(fastq|fq|fasta|fa)(\.gz)?$/i.test(cleanFileName)) {
+                  extractedNames.push(cleanFileName);
+                  const entrySize = (zipEntry as any)._data?.uncompressedSize || (zipEntry as any)._data?.compressedSize || Math.round(file.size / 8);
+                  fileSizes.set(cleanFileName.toLowerCase(), entrySize);
+                }
+              }
+            });
+          } catch (err) {
+            console.warn('Could not read ZIP contents via JSZip fallback:', err);
+          }
         }
       } else {
         extractedNames.push(file.name);
@@ -246,32 +277,61 @@ export const UploadModal: React.FC<UploadModalProps> = ({
       }
     }
 
-    const datasetTitle = isZipArchive && detectedZipName 
-      ? detectedZipName
-      : `${fileArray.length} Uploaded FASTQ File(s)`;
-    if (!uploadedDatasetTitle) setUploadedDatasetTitle(datasetTitle);
+    // Default the pipeline / dataset title to the uploaded file name
+    const primaryFileName = isZipArchive && detectedZipName 
+      ? detectedZipName 
+      : (fileArray[0]?.name || (extractedNames[0] || `${fileArray.length} Uploaded FASTQ File(s)`));
+
+    const datasetTitle = primaryFileName;
+    setUploadedDatasetTitle(datasetTitle);
+
+    // If pipeline name is not given or empty, take the uploaded file name as default
+    if (!projectName || projectName.trim() === '') {
+      setProjectName(primaryFileName);
+    }
+
+    const isR2File = (name: string): boolean => {
+      return /([._-]R2([._-]|$)|\.2\.fastq|\.2\.fq|_[2]\.(fastq|fq)|_R2_)/i.test(name) ||
+        name.includes('_R2') || name.includes('_2.fastq') || name.includes('_2.fq');
+    };
+
+    const isR1File = (name: string): boolean => {
+      return /([._-]R1([._-]|$)|\.1\.fastq|\.1\.fq|_[1]\.(fastq|fq)|_R1_)/i.test(name) ||
+        name.includes('_R1') || name.includes('_1.fastq') || name.includes('_1.fq');
+    };
 
     let detectedPaired = false;
     const sampleMap = new Map<string, { r1: string; r2?: string }>();
 
     extractedNames.forEach((name) => {
-      const isR2 = name.includes('_R2') || name.includes('_2.fastq') || name.includes('_2.fq') || name.includes('_R2_');
+      const isR2 = isR2File(name);
+      const isR1 = isR1File(name);
       if (isR2) detectedPaired = true;
 
       // Extract base sample identifier (e.g. "Test01_L001_R1_001.fastq" -> "Test01")
       const baseName = name
-        .replace(/(_L00\d)?(_R[12]|\_[12])?(_00\d)?\.(fastq|fq|fasta|fa)(\.gz)?$/i, '')
+        .replace(/([._-]L00\d)?([._-]R[12]|_[12])?([._-]00\d)?\.(fastq|fq|fasta|fa|fna)(\.gz)?$/i, '')
         .replace(/[^a-zA-Z0-9_-]/g, '_');
 
       if (!sampleMap.has(baseName)) {
-        sampleMap.set(baseName, { r1: name });
+        sampleMap.set(baseName, {
+          r1: isR2 ? '' : name,
+          r2: isR2 ? name : undefined,
+        });
       } else {
         const existing = sampleMap.get(baseName)!;
         if (isR2) {
           existing.r2 = name;
-        } else if (!existing.r1) {
+        } else if (isR1 || !existing.r1) {
           existing.r1 = name;
         }
+      }
+    });
+
+    sampleMap.forEach((entry) => {
+      if (!entry.r1 && entry.r2) {
+        entry.r1 = entry.r2;
+        entry.r2 = undefined;
       }
     });
 
@@ -336,7 +396,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
         group: idx % 2 === 1 ? 'Control' : 'Treatment',
         layout: newLayout,
         fileR1: filesInfo.r1,
-        fileR2: newLayout === 'paired' ? (filesInfo.r2 || filesInfo.r1.replace(/_R1|_1/i, '_R2')) : undefined,
+        fileR2: (newLayout === 'paired' && filesInfo.r2) ? filesInfo.r2 : undefined,
         rawReads,
         trimmedReads: trimmed,
         denoisedReads: denoised,
@@ -349,7 +409,12 @@ export const UploadModal: React.FC<UploadModalProps> = ({
     if (newSampleEntries.length === 0 && sampleMap.size > 0) {
       setUploadNotice("All uploaded files are already present in the manifest. No duplicates added.");
     } else {
-      setSampleList([...existingSamples, ...newSampleEntries]);
+      const combined = [...existingSamples, ...newSampleEntries];
+      setSampleList(combined);
+      const totalFastqCount = isZipArchive 
+        ? extractedNames.length 
+        : countSampleFastqFiles(combined);
+      setExactArchiveFileCount(totalFastqCount);
     }
     setIsProcessing(false);
 
@@ -377,10 +442,10 @@ export const UploadModal: React.FC<UploadModalProps> = ({
             <div className="text-center px-8">
               <h3 className="text-lg font-bold text-slate-900">Processing Pipeline Data...</h3>
               <p className="text-xs text-slate-500 max-w-sm mx-auto mt-2 leading-relaxed">
-                Staging your sequencing archive for the Cloud Batch queue. For large archives (like your 2GB project), deep browser-side metadata extraction is bypassed to prevent memory crashes.
+                Staging sequencing files for pipeline execution. Reading archive entries and registering sample manifests.
               </p>
               <p className="text-[10px] text-blue-600 font-bold mt-4 uppercase tracking-widest">
-                Staging to Cloud Volumes — Do not refresh
+                Staging in progress — Do not refresh
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -424,20 +489,25 @@ export const UploadModal: React.FC<UploadModalProps> = ({
         <div className="p-6 space-y-6 text-xs text-slate-700">
           {/* Project Naming Section */}
           <div className="p-4 bg-blue-50/50 border border-blue-100 rounded-xl space-y-3">
-            <div className="flex items-center gap-2 text-blue-900 font-bold uppercase tracking-wider text-[11px]">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Pipeline Project Naming</span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-blue-900 font-bold uppercase tracking-wider text-[11px]">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Pipeline Project Naming</span>
+              </div>
+              <span className="text-[10px] text-blue-600 font-medium">
+                {uploadedDatasetTitle ? `Default: ${uploadedDatasetTitle}` : 'Defaults to uploaded file name'}
+              </span>
             </div>
             <div className="flex flex-col sm:flex-row gap-3">
               <input
                 type="text"
-                placeholder="Enter a descriptive project name (e.g., Human Gut Microbiome Run 2026)"
+                placeholder={uploadedDatasetTitle ? `Default: ${uploadedDatasetTitle}` : "Enter pipeline name (defaults to uploaded file name)"}
                 value={projectName}
                 onChange={(e) => setProjectName(e.target.value)}
                 className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-medium focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
               />
-              <div className="hidden sm:flex items-center px-3 bg-slate-100 rounded-lg text-slate-400 font-mono text-[10px]">
-                {samples.length} Samples Active
+              <div className="hidden sm:flex items-center px-3 bg-slate-100 rounded-lg text-slate-500 font-mono text-[10px]">
+                {sampleList.length} Samples Active
               </div>
             </div>
           </div>
@@ -502,7 +572,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
                 </div>
                 <div>
                   <h3 className="font-extrabold text-emerald-900 text-sm">
-                    Files Successfully Uploaded & Staged ({sampleList.length} Sample Manifest Rows Ready)
+                    Files Successfully Uploaded &amp; Staged ({exactArchiveFileCount ?? countSampleFastqFiles(sampleList)} FASTQ Files • {sampleList.length} Sample Manifest Rows Ready)
                   </h3>
                   <p className="text-xs text-emerald-700 mt-0.5">
                     Your sequencing files are registered and ready to proceed. Review the sample table below or click <strong>Save & Run Pipeline Now 🚀</strong> to start!
@@ -559,11 +629,12 @@ export const UploadModal: React.FC<UploadModalProps> = ({
                     type="button"
                     onClick={() => {
                       setSelectedLayout('paired');
+                      setExactArchiveFileCount(12);
                       onLoadMockFiles();
                       const targetButtonLabel = executionMode === 'cloud_batch'
                         ? '"Stage to Cloud & Launch Batch Queue 🚀"'
                         : '"Save & Run Pipeline Now 🚀"';
-                      setUploadNotice(`Loaded 6 Paired-End FASTQ demo samples into the manifest! Review your sample table below and click ${targetButtonLabel}.`);
+                      setUploadNotice(`Loaded 6 Paired-End FASTQ demo samples (12 FASTQ files) into the manifest! Review your sample table below and click ${targetButtonLabel}.`);
                     }}
                     className={`px-3 py-1.5 font-semibold rounded-lg text-xs border transition-colors flex items-center gap-1.5 ${
                       !isSingleEnd
@@ -580,11 +651,12 @@ export const UploadModal: React.FC<UploadModalProps> = ({
                     type="button"
                     onClick={() => {
                       setSelectedLayout('single');
+                      setExactArchiveFileCount(6);
                       onLoadSingleEndMockFiles();
                       const targetButtonLabel = executionMode === 'cloud_batch'
                         ? '"Stage to Cloud & Launch Batch Queue 🚀"'
                         : '"Save & Run Pipeline Now 🚀"';
-                      setUploadNotice(`Loaded 6 Single-End FASTQ demo samples into the manifest! Review your sample table below and click ${targetButtonLabel}.`);
+                      setUploadNotice(`Loaded 6 Single-End FASTQ demo samples (6 FASTQ files) into the manifest! Review your sample table below and click ${targetButtonLabel}.`);
                     }}
                     className={`px-3 py-1.5 font-semibold rounded-lg text-xs border transition-colors flex items-center gap-1.5 ${
                       isSingleEnd

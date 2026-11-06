@@ -16,7 +16,8 @@ import {
   Server,
   Activity,
   ShieldCheck,
-  Workflow
+  Workflow,
+  X
 } from 'lucide-react';
 import { PipelineStage, PipelineConfig, BatchJobState } from '../types/pipeline';
 
@@ -42,6 +43,22 @@ export const PipelineStepper: React.FC<PipelineStepperProps> = ({
 }) => {
   const [showLogs, setShowLogs] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [isBatchDismissed, setIsBatchDismissed] = useState(false);
+
+  // Reset dismissal when new run starts
+  React.useEffect(() => {
+    if (isRunning) {
+      setIsBatchDismissed(false);
+    }
+  }, [isRunning]);
+
+  // Once all stages are completed or when pipeline is not actively running, remove the queue monitor
+  const isAllCompleted = stages.length > 0 && stages.every(s => s.status === 'completed');
+  const shouldShowBatchMonitor = 
+    config?.executionMode === 'cloud_batch' && 
+    isRunning && 
+    !isAllCompleted && 
+    !isBatchDismissed;
 
   // Selected stage for logs
   const selectedStage = stages.find(s => s.id === activeStageId) || stages[0];
@@ -139,19 +156,19 @@ export const PipelineStepper: React.FC<PipelineStepperProps> = ({
           })}
         </div>
 
-        {/* Cloud Batch & Asynchronous Queue Monitor (when cloud_batch is active) */}
-        {config?.executionMode === 'cloud_batch' && (
-          <div className="mt-3 p-3 bg-sky-50/70 border border-sky-200/90 rounded-xl space-y-2 text-xs">
+        {/* Cloud Batch & Asynchronous Queue Monitor (Only shown while pipeline is actively running in cloud_batch mode) */}
+        {shouldShowBatchMonitor && (
+          <div className="mt-3 p-3 bg-sky-50/70 border border-sky-200/90 rounded-xl space-y-2 text-xs animate-in fade-in slide-in-from-top-1 duration-200">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-sky-200/60 pb-2">
               <div className="flex items-center gap-2">
                 <span className="p-1 bg-sky-600 text-white rounded-md">
                   <Cloud className="w-3.5 h-3.5" />
                 </span>
                 <span className="font-bold text-sky-950 text-xs">
-                  Asynchronous Cloud Storage & Chunked Batch Queue
+                  Asynchronous Cloud Storage &amp; Chunked Batch Queue
                 </span>
                 <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-sky-100 text-sky-800 border border-sky-200">
-                  {config.workflowManager || 'Celery'} Daemon
+                  {config?.workflowManager || 'Celery'} Daemon
                 </span>
               </div>
               <div className="flex items-center gap-2 text-[11px] text-sky-800">
@@ -164,12 +181,19 @@ export const PipelineStepper: React.FC<PipelineStepperProps> = ({
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
                   Non-blocking (Safe to close/navigate)
                 </span>
+                <button
+                  onClick={() => setIsBatchDismissed(true)}
+                  className="ml-1 p-1 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-sky-100 transition-colors"
+                  title="Dismiss batch monitor"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
               </div>
             </div>
 
             {/* File Ingestion Verification Section */}
-            {batchJobState?.status === 'batch_processing' || batchJobState?.status === 'staging_cloud' || batchJobState?.status === 'completed' ? (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 bg-white/50 border border-sky-100 rounded-lg p-2.5 shadow-sm">
+            {batchJobState?.status === 'batch_processing' || batchJobState?.status === 'staging_cloud' ? (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 bg-white/50 border border-sky-100 rounded-lg p-2.5 shadow-xs">
                 <div className="flex flex-col gap-1">
                   <div className="flex items-center gap-2 text-sky-900 font-bold">
                     <div className="w-5 h-5 rounded bg-emerald-100 text-emerald-600 flex items-center justify-center">
@@ -178,7 +202,7 @@ export const PipelineStepper: React.FC<PipelineStepperProps> = ({
                     <span>Data Integrity</span>
                   </div>
                   <div className="text-[10px] text-slate-500 pl-7">
-                    {batchJobState?.detectedFileCount || batchJobState?.totalSamples * 2} files detected & checksum verified.
+                    {batchJobState?.detectedFileCount ?? batchJobState?.totalSamples ?? 0} files detected &amp; verified.
                   </div>
                 </div>
                 
@@ -202,7 +226,7 @@ export const PipelineStepper: React.FC<PipelineStepperProps> = ({
                     <span>Ingestion Audit</span>
                   </div>
                   <div className="text-[10px] text-slate-500 pl-7">
-                    {batchJobState?.ingestedFileCount || 0} of {batchJobState?.detectedFileCount || 0} input files accounted for in {batchJobState?.totalChunks || 3} worker tasks.
+                    {batchJobState?.ingestedFileCount ?? 0} of {batchJobState?.detectedFileCount ?? batchJobState?.totalSamples ?? 0} input files dispatched to parallel workers.
                   </div>
                 </div>
               </div>
@@ -212,7 +236,7 @@ export const PipelineStepper: React.FC<PipelineStepperProps> = ({
             <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="text-[11px] font-semibold text-slate-600">Sample Batch Chunks:</span>
-                {batchJobState?.chunks ? (
+                {batchJobState?.chunks && batchJobState.chunks.length > 0 ? (
                   batchJobState.chunks.map((chk, i) => (
                     <div
                       key={i}
@@ -231,30 +255,19 @@ export const PipelineStepper: React.FC<PipelineStepperProps> = ({
                     </div>
                   ))
                 ) : (
-                  <>
-                    <div className="px-2 py-0.5 rounded-lg border text-[11px] font-mono bg-emerald-50 text-emerald-800 border-emerald-200 flex items-center gap-1">
-                      <span>Chunk 1/3 (S01, S02)</span>
-                      <Check className="w-3 h-3 text-emerald-600" />
-                    </div>
-                    <div className="px-2 py-0.5 rounded-lg border text-[11px] font-mono bg-emerald-50 text-emerald-800 border-emerald-200 flex items-center gap-1">
-                      <span>Chunk 2/3 (S03, S04)</span>
-                      <Check className="w-3 h-3 text-emerald-600" />
-                    </div>
-                    <div className="px-2 py-0.5 rounded-lg border text-[11px] font-mono bg-emerald-50 text-emerald-800 border-emerald-200 flex items-center gap-1">
-                      <span>Chunk 3/3 (S05, S06)</span>
-                      <Check className="w-3 h-3 text-emerald-600" />
-                    </div>
-                  </>
+                  <span className="text-[11px] text-slate-500 font-mono">
+                    {isRunning ? 'Orchestrating parallel worker execution...' : 'Queue idle'}
+                  </span>
                 )}
               </div>
 
               <div className="flex items-center gap-3 text-[11px] text-slate-500">
                 <span className="flex items-center gap-1">
                   <Activity className="w-3.5 h-3.5 text-blue-500" />
-                  Peak RAM: <strong>4.8 GB</strong> / {config.maxMemoryPerWorkerGb || 16} GB Cap
+                  Peak RAM: <strong>4.8 GB</strong> / {config?.maxMemoryPerWorkerGb || 16} GB Cap
                 </span>
                 <span className="text-slate-300">|</span>
-                <span>Workers: <strong>{config.maxParallelWorkers || 4} parallel</strong></span>
+                <span>Workers: <strong>{config?.maxParallelWorkers || 4} parallel</strong></span>
               </div>
             </div>
           </div>
@@ -269,7 +282,9 @@ export const PipelineStepper: React.FC<PipelineStepperProps> = ({
                 ? config?.executionMode === 'cloud_batch' 
                   ? 'Batch workers executing chunk tasks in cloud...' 
                   : 'Workflow executing tasks...' 
-                : 'Workflow idle / ready'}
+                : isAllCompleted
+                  ? 'Pipeline execution completed (All 7 stages verified)'
+                  : 'Workflow ready'}
             </span>
             <span className="text-slate-300">|</span>
             <span className="text-slate-500 hidden sm:inline flex items-center gap-1">

@@ -24,11 +24,13 @@ import {
   Radio,
   FileCode,
   Gauge,
-  Activity
+  Activity,
+  Compass
 } from 'lucide-react';
 import { MAGAnalysisResults, MAGRecord } from '../types/mag';
 import { ASVRecord, OTURecord, SampleMetadata } from '../types/pipeline';
 import { deriveMagBinsFromDataset, computeMagStats } from '../services/magService';
+import { CheckmQuadrantChart } from './CheckmQuadrantChart';
 
 interface MagAnalysisViewerProps {
   magData?: MAGAnalysisResults;
@@ -54,7 +56,7 @@ export const MagAnalysisViewer: React.FC<MagAnalysisViewerProps> = ({
   }, [magData, asvs, samples]);
 
   const [bins, setBins] = useState<MAGRecord[]>(initialDerived);
-  const [activeTab, setActiveTab] = useState<'table' | 'heatmap'>('table');
+  const [activeTab, setActiveTab] = useState<'quadrant' | 'table' | 'heatmap'>('quadrant');
   const [searchTerm, setSearchTerm] = useState('');
   const [qualityFilter, setQualityFilter] = useState<'all' | 'High Quality' | 'Medium Quality' | 'Low Quality'>('all');
   const [selectedBin, setSelectedBin] = useState<MAGRecord | null>(null);
@@ -436,8 +438,17 @@ export const MagAnalysisViewer: React.FC<MagAnalysisViewerProps> = ({
           {/* View Tab Buttons */}
           <div className="bg-slate-900/60 p-1 rounded-2xl flex items-center gap-1 border border-white/15">
             <button 
+              onClick={() => setActiveTab('quadrant')} 
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                activeTab === 'quadrant' ? 'bg-white text-slate-900 shadow-md' : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              <Compass className={`w-3.5 h-3.5 ${activeTab === 'quadrant' ? 'text-cyan-600' : 'text-cyan-400'}`} />
+              <span>CheckM2 Quadrant</span>
+            </button>
+            <button 
               onClick={() => setActiveTab('table')} 
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
                 activeTab === 'table' ? 'bg-white text-slate-900 shadow-md' : 'text-slate-300 hover:text-white'
               }`}
             >
@@ -446,7 +457,7 @@ export const MagAnalysisViewer: React.FC<MagAnalysisViewerProps> = ({
             </button>
             <button 
               onClick={() => setActiveTab('heatmap')} 
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
                 activeTab === 'heatmap' ? 'bg-white text-slate-900 shadow-md' : 'text-slate-300 hover:text-white'
               }`}
             >
@@ -586,42 +597,68 @@ export const MagAnalysisViewer: React.FC<MagAnalysisViewerProps> = ({
         </div>
       </div>
 
-      {activeTab === 'table' ? (
+      {/* Action Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Generate Bins Button */}
+          <button
+            onClick={handleGenerateMagBins}
+            disabled={isBinning || isCheckMRunning}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-xs transition-all flex items-center gap-2 transform active:scale-95"
+          >
+            <Workflow className={`w-3.5 h-3.5 ${isBinning ? 'animate-spin' : ''}`} />
+            <span>{isBinning ? 'Partitioning Bins...' : 'Generate Bins'}</span>
+          </button>
+
+          {/* Run CheckM Button */}
+          <button
+            onClick={handleRunCheckM}
+            disabled={isCheckMRunning || isBinning}
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-xs transition-all flex items-center gap-2 transform active:scale-95"
+          >
+            <ShieldCheck className={`w-3.5 h-3.5 ${isCheckMRunning ? 'animate-spin' : ''}`} />
+            <span>{isCheckMRunning ? 'Evaluating CheckM2...' : 'Run CheckM'}</span>
+          </button>
+
+          {/* Download Report Button */}
+          <button
+            onClick={handleDownloadReport}
+            className="px-3.5 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+          >
+            <FileDown className="w-3.5 h-3.5 text-slate-500" />
+            <span>Export CSV Report</span>
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
+          <span className="font-semibold text-slate-700">CheckM2 Benchmark:</span>
+          <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[10px]">
+            &gt;90% Comp, &lt;5% Contam (High)
+          </span>
+          <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-bold text-[10px]">
+            &gt;50% Comp, &lt;10% Contam (Medium)
+          </span>
+        </div>
+      </div>
+
+      {/* Tab 1: CheckM2 Quadrant Chart View */}
+      {activeTab === 'quadrant' && (
+        <CheckmQuadrantChart
+          bins={bins}
+          onSelectBin={(bin) => setSelectedBin(bin)}
+          selectedBinId={selectedBin?.binId}
+        />
+      )}
+
+      {/* Tab 2: Bin Table View */}
+      {activeTab === 'table' && (
         <div className="space-y-4">
-          {/* Action Toolbar */}
+          {/* Table Search & Filter Toolbar */}
           <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs">
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Generate Bins Button */}
-              <button
-                onClick={handleGenerateMagBins}
-                disabled={isBinning || isCheckMRunning}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-xs transition-all flex items-center gap-2 transform active:scale-95"
-              >
-                <Workflow className={`w-3.5 h-3.5 ${isBinning ? 'animate-spin' : ''}`} />
-                <span>{isBinning ? 'Partitioning Bins...' : 'Generate Bins'}</span>
-              </button>
-
-              {/* Run CheckM Button */}
-              <button
-                onClick={handleRunCheckM}
-                disabled={isCheckMRunning || isBinning}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-xs transition-all flex items-center gap-2 transform active:scale-95"
-              >
-                <ShieldCheck className={`w-3.5 h-3.5 ${isCheckMRunning ? 'animate-spin' : ''}`} />
-                <span>{isCheckMRunning ? 'Evaluating CheckM2...' : 'Run CheckM'}</span>
-              </button>
-
-              {/* Download Report Button */}
-              <button
-                onClick={handleDownloadReport}
-                className="px-3.5 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
-              >
-                <FileDown className="w-3.5 h-3.5 text-slate-500" />
-                <span>Export CSV Report</span>
-              </button>
+            <div className="flex items-center gap-2 text-xs text-slate-500">
+              <span className="font-bold text-slate-800">Filter Quality Tier:</span>
             </div>
 
-            {/* Filter & Search */}
             <div className="flex flex-wrap items-center gap-3">
               {/* Quality Filter Pills */}
               <div className="flex items-center bg-slate-100 p-1 rounded-xl text-xs font-semibold">
@@ -779,8 +816,10 @@ export const MagAnalysisViewer: React.FC<MagAnalysisViewerProps> = ({
             )}
           </div>
         </div>
-      ) : (
-        /* Abundance Heatmap View */
+      )}
+
+      {/* Tab 3: Abundance Heatmap View */}
+      {activeTab === 'heatmap' && (
         <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-2xs space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div>

@@ -212,5 +212,7 @@ export interface PipelineRunResults {
   otus: OTURecord[];
   diversity: DiversityData;
   otuDiversity: DiversityData;
+  detectedFileCount?: number;
+  ingestedFileCount?: number;
 }
 

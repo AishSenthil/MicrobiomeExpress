@@ -54,7 +54,7 @@ import { TaxaBarPlot } from './components/TaxaBarPlot';
 import { DiversityViewer } from './components/DiversityViewer';
 import { AsvTableViewer } from './components/AsvTableViewer';
 import { ConfigPanel } from './components/ConfigPanel';
-import { UploadModal } from './components/UploadModal';
+import { UploadModal, countSampleFastqFiles } from './components/UploadModal';
 import { ReportGeneratorModal } from './components/ReportGeneratorModal';
 import { CodeHubModal } from './components/CodeHubModal';
 import { BatchHistoryTab } from './components/BatchHistoryTab';
@@ -313,6 +313,7 @@ export default function App() {
     } else {
       setStages(INITIAL_STAGES);
       setActiveStageId('otu_clustering');
+      const trueFileCount = dataset.detectedFileCount ?? countSampleFastqFiles(dataset.samples);
       setBatchJobState({
         jobId: `JOB-${dataset.runId}`,
         active: false,
@@ -325,8 +326,8 @@ export default function App() {
         currentChunkIndex: 3,
         estimatedRemainingSec: 0,
         currentStageName: 'All Chunks Completed',
-        detectedFileCount: dataset.samples.length * 2,
-        ingestedFileCount: dataset.samples.length * 2,
+        detectedFileCount: trueFileCount,
+        ingestedFileCount: trueFileCount,
         storageBucket: dataset.config.cloudBucketUri || 'gs://microbiome-runs-staging',
         stagingProgress: 100,
         chunks: [
@@ -366,7 +367,11 @@ export default function App() {
   };
 
   // Run Pipeline Execution Simulation
-  const handleRunPipeline = async (overrideSamples?: SampleMetadata[], overrideTitle?: string) => {
+  const handleRunPipeline = async (
+    overrideSamples?: SampleMetadata[], 
+    overrideTitle?: string,
+    overrideFileCount?: number
+  ) => {
     if (isRunning) return;
     setStagedNotification(null);
     setIsRunning(true);
@@ -385,6 +390,10 @@ export default function App() {
       ? `${overrideSamples.length} Uploaded FASTQ Samples (${overrideSamples.map(s => s.name).slice(0, 3).join(', ')}${overrideSamples.length > 3 ? '...' : ''})`
       : currentDataset.datasetName);
 
+    const totalSamples = samplesToRun.length;
+    const totalFastqFiles = overrideFileCount 
+      ?? (currentDataset.detectedFileCount && currentDataset.samples === samplesToRun ? currentDataset.detectedFileCount : countSampleFastqFiles(samplesToRun));
+
     // 1. SET STAGED DATASET (No results yet, just manifest and raw read counts)
     const stagedDataset: PipelineRunResults = {
       runId: generateUniqueRunId(titleToRun, samplesToRun),
@@ -392,6 +401,8 @@ export default function App() {
       timestamp: new Date().toISOString(),
       config: pipelineConfig,
       samples: samplesToRun,
+      detectedFileCount: totalFastqFiles,
+      ingestedFileCount: 0,
       qc: {
         totalRawReads: samplesToRun.reduce((acc, s) => acc + (s.rawReads || 85000), 0),
         totalCleanReads: 0,
@@ -425,7 +436,6 @@ export default function App() {
     const isCloudBatch = pipelineConfig.executionMode === 'cloud_batch';
     if (isCloudBatch) {
       const chunkSize = pipelineConfig.batchChunkSize || 2;
-      const totalSamples = stagedDataset.samples.length;
       const chunks: BatchChunkInfo[] = [];
       for (let i = 0; i < totalSamples; i += chunkSize) {
         const chunkSamples = stagedDataset.samples.slice(i, i + chunkSize);
@@ -452,9 +462,9 @@ export default function App() {
         totalChunks: chunks.length,
         currentChunkIndex: 1,
         estimatedRemainingSec: 35,
-        currentStageName: `Staging 0/${totalSamples * 2} files to Cloud Storage...`,
-        detectedFileCount: totalSamples * 2,
-        verifiedFileCount: totalSamples * 2,
+        currentStageName: `Staging 0/${totalFastqFiles} files to Cloud Storage...`,
+        detectedFileCount: totalFastqFiles,
+        verifiedFileCount: totalFastqFiles,
         ingestedFileCount: 0,
         stagingProgress: 0,
         storageBucket: pipelineConfig.cloudBucketUri || 'gs://microbiome-runs-staging/cohort-2026',
@@ -466,7 +476,8 @@ export default function App() {
       setBatchJobState(prev => prev ? {
         ...prev,
         stagingProgress: 100,
-        currentStageName: `Ingestion Verified. Starting Chunk 1 (${chunks[0]?.sampleIds.join(', ') || ''})`,
+        ingestedFileCount: Math.min(totalFastqFiles, Math.max(1, Math.round(totalFastqFiles * 0.25))),
+        currentStageName: `Ingestion Verified (${totalFastqFiles} files). Starting Chunk 1 (${chunks[0]?.sampleIds.join(', ') || ''})`,
       } : null);
     }
 
@@ -491,11 +502,13 @@ export default function App() {
       // Update batch chunk progress dynamically as pipeline stages advance
       if (isCloudBatch) {
         if (i === 1) {
+          const chunk1Samples = Math.min(totalSamples, Math.max(1, Math.round(totalSamples * 0.33)));
+          const chunk1Files = Math.min(totalFastqFiles, Math.max(1, Math.round(totalFastqFiles * 0.35)));
           setBatchJobState(prev => prev ? {
             ...prev,
             currentChunkIndex: 2,
-            processedSamples: Math.min(prev.totalSamples, 2),
-            ingestedFileCount: Math.min(prev.detectedFileCount || 0, 4),
+            processedSamples: chunk1Samples,
+            ingestedFileCount: chunk1Files,
             currentStageName: 'Trimming Primer Adapters (Chunk 2)',
             chunks: prev.chunks.map(c => 
               c.chunkIndex === 1 ? { ...c, status: 'completed', duration: '14s' } :
@@ -503,11 +516,13 @@ export default function App() {
             )
           } : null);
         } else if (i === 2) {
+          const chunk2Samples = Math.min(totalSamples, Math.max(2, Math.round(totalSamples * 0.67)));
+          const chunk2Files = Math.min(totalFastqFiles, Math.max(2, Math.round(totalFastqFiles * 0.7)));
           setBatchJobState(prev => prev ? {
             ...prev,
             currentChunkIndex: 3,
-            processedSamples: Math.min(prev.totalSamples, 4),
-            ingestedFileCount: Math.min(prev.detectedFileCount || 0, 8),
+            processedSamples: chunk2Samples,
+            ingestedFileCount: chunk2Files,
             currentStageName: 'DADA2 Error Learning & Denoising (Chunk 3)',
             chunks: prev.chunks.map(c => 
               c.chunkIndex <= 2 ? { ...c, status: 'completed', duration: '20s' } :
@@ -519,7 +534,7 @@ export default function App() {
             ...prev,
             currentChunkIndex: prev.totalChunks,
             processedSamples: prev.totalSamples,
-            ingestedFileCount: prev.detectedFileCount,
+            ingestedFileCount: totalFastqFiles,
             currentStageName: 'Consensus Chimera Removal (All Chunks Merged)',
             chunks: prev.chunks.map(c => ({ ...c, status: 'completed', duration: '18s' }))
           } : null);
@@ -548,6 +563,8 @@ export default function App() {
       stagedDataset.runId,
       titleToRun
     );
+    finalDataset.detectedFileCount = totalFastqFiles;
+    finalDataset.ingestedFileCount = totalFastqFiles;
 
     if (isCloudBatch) {
       setBatchJobState(prev => prev ? {
@@ -555,8 +572,9 @@ export default function App() {
         status: 'completed',
         active: false,
         processedSamples: finalDataset.samples.length,
-        ingestedFileCount: finalDataset.samples.length * 2,
-        currentStageName: 'All Chunks Successfully Processed in Cloud',
+        detectedFileCount: totalFastqFiles,
+        ingestedFileCount: totalFastqFiles,
+        currentStageName: `All ${totalFastqFiles} files in chunks successfully processed in Cloud`,
         chunks: prev.chunks.map(c => ({ ...c, status: 'completed' }))
       } : null);
     }
@@ -1612,7 +1630,7 @@ workflow_manager: "${pipelineConfig.workflowManager}"
         onClose={() => setIsUploadOpen(false)}
         samples={currentDataset.samples}
         sequencingType={pipelineConfig.sequencingType}
-        onUpdateSamples={(newSamples, newType, newMode, datasetName) => {
+        onUpdateSamples={(newSamples, newType, newMode, datasetName, exactFileCount) => {
           const updatedType = newType || pipelineConfig.sequencingType;
           const updatedMode = newMode || pipelineConfig.executionMode;
           const updatedConfig: PipelineConfig = {
@@ -1625,15 +1643,40 @@ workflow_manager: "${pipelineConfig.workflowManager}"
           }
 
           const dsTitle = datasetName || `${newSamples.length} Uploaded FASTQ Samples`;
+          const trueFileCount = exactFileCount ?? countSampleFastqFiles(newSamples);
           const populatedDataset = buildPipelineResultsForSamples(
             newSamples,
             updatedConfig,
             `RUN-${Date.now().toString().slice(-6)}`,
             dsTitle
           );
+          populatedDataset.detectedFileCount = trueFileCount;
+          populatedDataset.ingestedFileCount = trueFileCount;
 
           setCurrentDataset(populatedDataset);
           setStages(INITIAL_STAGES);
+
+          if (updatedMode === 'cloud_batch') {
+            setBatchJobState({
+              jobId: `JOB-${populatedDataset.runId}`,
+              active: false,
+              mode: 'cloud_batch',
+              status: 'idle',
+              cloudUri: updatedConfig.cloudBucketUri || 'gs://microbiome-runs-staging',
+              totalSamples: newSamples.length,
+              processedSamples: 0,
+              totalChunks: Math.ceil(newSamples.length / (updatedConfig.batchChunkSize || 2)),
+              currentChunkIndex: 1,
+              estimatedRemainingSec: 30,
+              currentStageName: `Staged ${trueFileCount} FASTQ files for batch processing`,
+              detectedFileCount: trueFileCount,
+              verifiedFileCount: trueFileCount,
+              ingestedFileCount: 0,
+              stagingProgress: 100,
+              storageBucket: updatedConfig.cloudBucketUri || 'gs://microbiome-runs-staging',
+              chunks: [],
+            });
+          }
 
           setStagedNotification({
             count: newSamples.length,
@@ -1642,11 +1685,11 @@ workflow_manager: "${pipelineConfig.workflowManager}"
 
           if (pipelineConfig.autoRunOnUpload) {
             setTimeout(() => {
-              handleRunPipeline(newSamples, dsTitle);
+              handleRunPipeline(newSamples, dsTitle, trueFileCount);
             }, 500);
           }
         }}
-        onSaveAndRun={(newSamples, newType, newMode, datasetName) => {
+        onSaveAndRun={(newSamples, newType, newMode, datasetName, exactFileCount) => {
           const updatedType = newType || pipelineConfig.sequencingType;
           const updatedMode = newMode || pipelineConfig.executionMode;
           const updatedConfig: PipelineConfig = {
@@ -1659,17 +1702,20 @@ workflow_manager: "${pipelineConfig.workflowManager}"
           }
 
           const dsTitle = datasetName || `${newSamples.length} Uploaded FASTQ Samples`;
+          const trueFileCount = exactFileCount ?? countSampleFastqFiles(newSamples);
           const populatedDataset = buildPipelineResultsForSamples(
             newSamples,
             updatedConfig,
             `RUN-${Date.now().toString().slice(-6)}`,
             dsTitle
           );
+          populatedDataset.detectedFileCount = trueFileCount;
+          populatedDataset.ingestedFileCount = trueFileCount;
 
           setCurrentDataset(populatedDataset);
 
           setTimeout(() => {
-            handleRunPipeline(newSamples, dsTitle);
+            handleRunPipeline(newSamples, dsTitle, trueFileCount);
           }, 150);
         }}
         onLoadMockFiles={() => {
